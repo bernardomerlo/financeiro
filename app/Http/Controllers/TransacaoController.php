@@ -13,7 +13,7 @@ class TransacaoController extends Controller
         $validated = $request->validate([
             'data' => 'required|date_format:Y-m-d',
             'tipo' => 'required|in:entrada,saida,diario',
-            'valor' => 'required|numeric|gt:0',
+            'valor' => 'required|numeric|min:0',
             'descricao' => 'nullable|string|max:255',
         ]);
 
@@ -23,5 +23,34 @@ class TransacaoController extends Controller
             'message' => 'Transação registrada com sucesso.',
             'data' => $transacao
         ], 201);
+    }
+
+    public function update(Request $request, int $id): JsonResponse
+    {
+        $transacao = Transacao::findOrFail($id);
+
+        $validated = $request->validate([
+            'data' => 'sometimes|required|date_format:Y-m-d',
+            'tipo' => 'sometimes|required|in:entrada,saida,diario',
+            'valor' => 'sometimes|required|numeric|min:0',
+            'descricao' => 'nullable|string|max:255',
+        ]);
+
+        $transacao->update($validated);
+
+        return response()->json([
+            'message' => 'Transação atualizada com sucesso.',
+            'data' => $transacao
+        ]);
+    }
+
+    public function destroy(int $id): JsonResponse
+    {
+        $transacao = Transacao::findOrFail($id);
+        $transacao->delete();
+
+        return response()->json([
+            'message' => 'Transação removida com sucesso.'
+        ]);
     }
 }
