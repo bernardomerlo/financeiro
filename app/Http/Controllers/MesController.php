@@ -34,12 +34,51 @@ class MesController extends Controller
 
         $linhasDoMes = [];
 
-        // Busca todo o histórico financeiro antes do dia 1 deste mês para compor o saldo inicial
-        $entradasPassadas = Transacao::where('data', '<', $dataInicio)->where('tipo', 'entrada')->sum('valor');
-        $saidasPassadas = Transacao::where('data', '<', $dataInicio)->where('tipo', 'saida')->sum('valor');
-        $diariosPassados = Transacao::where('data', '<', $dataInicio)->where('tipo', 'diario')->sum('valor');
+        $ontem = $hoje->copy()->subDay();
 
-        $saldoAcumulado = (float) $entradasPassadas - (float) $saidasPassadas - (float) $diariosPassados;
+        if ($dataInicio->gt($hoje)) {
+            $entradasAteOntem = Transacao::where('data', '<=', $ontem)->where('tipo', 'entrada')->sum('valor');
+            $saidasAteOntem = Transacao::where('data', '<=', $ontem)->where('tipo', 'saida')->sum('valor');
+            $diariosAteOntem = Transacao::where('data', '<=', $ontem)->where('tipo', 'diario')->sum('valor');
+
+            $saldoAcumulado = (float) $entradasAteOntem - (float) $saidasAteOntem - (float) $diariosAteOntem;
+
+            $transacoesSim = Transacao::where('data', '>=', $hoje->format('Y-m-d'))
+                ->where('data', '<', $dataInicio->format('Y-m-d'))
+                ->get()
+                ->groupBy(function ($t) {
+                    return Carbon::parse($t->data)->format('Y-m-d');
+                });
+
+            $configuracoes = ConfiguracaoMes::all()->keyBy('ano_mes');
+
+            $diaSim = $hoje->copy();
+            while ($diaSim->lt($dataInicio)) {
+                $anoMesSim = $diaSim->format('Y-m');
+                $metaSim = $configuracoes->has($anoMesSim) ? (float) $configuracoes->get($anoMesSim)->meta_diaria : 50.00;
+
+                $tDia = $transacoesSim->get($diaSim->format('Y-m-d'), collect());
+                $ent = $tDia->where('tipo', 'entrada')->sum('valor');
+                $sai = $tDia->where('tipo', 'saida')->sum('valor');
+                $diarioReal = $tDia->where('tipo', 'diario')->sum('valor');
+
+                $diarioAplicado = 0;
+                if ($diaSim->equalTo($hoje)) {
+                    $diarioAplicado = ($diarioReal > 0) ? $diarioReal : $metaSim;
+                } else {
+                    $diarioAplicado = $metaSim;
+                }
+
+                $saldoAcumulado += $ent - ($sai + $diarioAplicado);
+                $diaSim->addDay();
+            }
+        } else {
+            $entradasPassadas = Transacao::where('data', '<', $dataInicio)->where('tipo', 'entrada')->sum('valor');
+            $saidasPassadas = Transacao::where('data', '<', $dataInicio)->where('tipo', 'saida')->sum('valor');
+            $diariosPassados = Transacao::where('data', '<', $dataInicio)->where('tipo', 'diario')->sum('valor');
+
+            $saldoAcumulado = (float) $entradasPassadas - (float) $saidasPassadas - (float) $diariosPassados;
+        }
 
         for ($dia = 1; $dia <= $diasNoMes; $dia++) {
             $dataLinha = Carbon::parse("$ano_mes-$dia");
@@ -78,7 +117,8 @@ class MesController extends Controller
                 'saidas' => $saidas,
                 'diario' => $diario,
                 'saldo' => round($saldoAcumulado, 2),
-                'fantasma' => $fantasma
+                'fantasma' => $fantasma,
+                'transacoes' => $transacoesDoDia->values()->toArray()
             ];
         }
 
