@@ -5,10 +5,29 @@ namespace App\Http\Controllers;
 use App\Models\Transacao;
 use App\Models\ConfiguracaoMes;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
 class MesController extends Controller
 {
+    /**
+     * Helper perspicaz para calcular o N-ésimo dia útil do mês
+     */
+    private function calcularDiaUtil(Carbon $data, int $n)
+    {
+        $count = 0;
+        $temp = $data->copy()->startOfMonth();
+        while (true) {
+            if ($temp->isWeekday()) {
+                $count++;
+            }
+            if ($count === $n) {
+                return $temp->day;
+            }
+            $temp->addDay();
+        }
+    }
+
     public function show(string $ano_mes): JsonResponse
     {
         // Validar formato YYYY-MM
@@ -16,15 +35,98 @@ class MesController extends Controller
             return response()->json(['message' => 'Formato de mês inválido. Use YYYY-MM.'], 400);
         }
 
-        // Procura a meta diária do mês ou assume 50.00 como padrão
+        // Procura a configuração do mês. Se não existir, herda do último para manter a automação sem precisar intervir.
         $config = ConfiguracaoMes::where('ano_mes', $ano_mes)->first();
+
+        if (!$config) {
+            $ultimaConfig = ConfiguracaoMes::orderBy('ano_mes', 'desc')->first();
+
+            if ($ultimaConfig) {
+                $config = ConfiguracaoMes::create([
+                    'ano_mes' => $ano_mes,
+                    'meta_diaria' => $ultimaConfig->meta_diaria,
+                    'dia_fechamento_fatura' => $ultimaConfig->dia_fechamento_fatura,
+                    'dia_pagamento_fatura' => $ultimaConfig->dia_pagamento_fatura,
+                    'dia_entrada' => $ultimaConfig->dia_entrada,
+                    'valor_entrada' => $ultimaConfig->valor_entrada,
+                ]);
+            }
+        }
+
         $metaDiaria = $config ? (float) $config->meta_diaria : 50.00;
 
         $dataInicio = Carbon::parse($ano_mes . '-01');
         $diasNoMes = $dataInicio->daysInMonth;
         $hoje = Carbon::today();
 
-        // Procura todas as transações do mês agrupadas pelo número do dia
+        // ------------------------------------------------------------------
+        // AUTO-SEEDING DA ENTRADA AUTOMÁTICA (Mágica acontece aqui antes de consultar a base)
+        // ------------------------------------------------------------------
+        if ($config && $config->valor_entrada > 0 && $config->dia_entrada) {
+
+            // Só gera automaticamente se for o mês atual ou um mês futuro.
+            $mesAtualOuFuturo = $dataInicio->copy()->endOfMonth()->gte($hoje->copy()->startOfMonth());
+
+            if ($mesAtualOuFuturo) {
+                $diaAlvo = null;
+
+                // Trata regra "5_util" vs dia fixo "5"
+                if (str_ends_with($config->dia_entrada, '_util')) {
+                    $n = (int) str_replace('_util', '', $config->dia_entrada);
+                    $diaAlvo = $this->calcularDiaUtil($dataInicio, $n);
+                } else {
+                    $diaAlvo = (int) $config->dia_entrada;
+                }
+
+                if ($diaAlvo) {
+                    // Verifica se JÁ existe uma entrada parecida com o salário neste mês para não duplicar
+                    // withTrashed() garante que se você deletou, ele não vai recriar feito um zumbi.
+                    $jaExiste = Transacao::withTrashed()
+                        ->whereYear('data', $dataInicio->year)
+                        ->whereMonth('data', $dataInicio->month)
+                        ->where('tipo', 'entrada')
+                        ->where(function ($q) use ($config) {
+                            $q->where('descricao', 'like', '%Automátic%')
+                                ->orWhere('valor', '>=', $config->valor_entrada * 0.8);
+                        })
+                        ->exists();
+
+                    if (!$jaExiste) {
+                        $dataTarget = $dataInicio->copy()->addDays($diaAlvo - 1)->format('Y-m-d');
+                        Transacao::create([
+                            'data' => $dataTarget,
+                            'tipo' => 'entrada',
+                            'valor' => $config->valor_entrada,
+                            'descricao' => 'Salário (Automático)'
+                        ]);
+                    }
+                }
+            }
+        }
+        // ------------------------------------------------------------------
+
+        // LÓGICA DO GASTO DIÁRIO REAL (Média Histórica)
+        $gastoDiarioReal = 0.00;
+
+        $primeiraEntrada = Transacao::where('tipo', 'entrada')->orderBy('data', 'asc')->first();
+        $marcoZero = $primeiraEntrada ? $primeiraEntrada : Transacao::orderBy('data', 'asc')->first();
+
+        if ($marcoZero) {
+            $dataInicioHistorico = Carbon::parse($marcoZero->data);
+
+            if ($dataInicioHistorico->lte($hoje)) {
+                $diasCorridos = $dataInicioHistorico->diffInDays($hoje) + 1;
+
+                $totalDiariosHistorico = Transacao::where('tipo', 'diario')
+                    ->where('data', '>=', $dataInicioHistorico->format('Y-m-d'))
+                    ->where('data', '<=', $hoje->format('Y-m-d'))
+                    ->sum('valor');
+
+                $gastoDiarioReal = (float) $totalDiariosHistorico / $diasCorridos;
+            }
+        }
+
+        // Procura todas as transações do mês agrupadas pelo número do dia (Aqui ele já vai pegar o Salário injetado acima)
         $transacoes = Transacao::whereYear('data', $dataInicio->year)
             ->whereMonth('data', $dataInicio->month)
             ->get()
@@ -33,7 +135,6 @@ class MesController extends Controller
             });
 
         $linhasDoMes = [];
-
         $ontem = $hoje->copy()->subDay();
 
         if ($dataInicio->gt($hoje)) {
@@ -60,11 +161,11 @@ class MesController extends Controller
                 $tDia = $transacoesSim->get($diaSim->format('Y-m-d'), collect());
                 $ent = $tDia->where('tipo', 'entrada')->sum('valor');
                 $sai = $tDia->where('tipo', 'saida')->sum('valor');
-                $diarioReal = $tDia->where('tipo', 'diario')->sum('valor');
+                $diarioRealLoop = $tDia->where('tipo', 'diario')->sum('valor');
 
                 $diarioAplicado = 0;
                 if ($diaSim->equalTo($hoje)) {
-                    $diarioAplicado = ($diarioReal > 0) ? $diarioReal : $metaSim;
+                    $diarioAplicado = ($diarioRealLoop > 0) ? $diarioRealLoop : $metaSim;
                 } else {
                     $diarioAplicado = $metaSim;
                 }
@@ -86,29 +187,25 @@ class MesController extends Controller
 
             $entradas = (float) $transacoesDoDia->where('tipo', 'entrada')->sum('valor');
             $saidas = (float) $transacoesDoDia->where('tipo', 'saida')->sum('valor');
-            $diarioReal = (float) $transacoesDoDia->where('tipo', 'diario')->sum('valor');
+            $diarioRealLinha = (float) $transacoesDoDia->where('tipo', 'diario')->sum('valor');
 
             $fantasma = false;
             $diario = 0.00;
 
             if ($dataLinha->lt($hoje)) {
-                // Dias passados: usa apenas o que foi inserido manualmente. Se não inseriu, fica 0.
-                $diario = $diarioReal;
+                $diario = $diarioRealLinha;
             } elseif ($dataLinha->equalTo($hoje)) {
-                // Dia atual: se já existir um gasto real inserido, usa-o. Caso contrário, mantém o fantasma.
-                if ($diarioReal > 0) {
-                    $diario = $diarioReal;
+                if ($diarioRealLinha > 0) {
+                    $diario = $diarioRealLinha;
                 } else {
                     $diario = $metaDiaria;
                     $fantasma = true;
                 }
             } else {
-                // Dias futuros: aplica sempre o gasto fantasma
                 $diario = $metaDiaria;
                 $fantasma = true;
             }
 
-            // Fórmula idêntica à da sua folha de cálculo: Saldo anterior + Entradas - (Saídas + Diário)
             $saldoAcumulado = $saldoAcumulado + $entradas - ($saidas + $diario);
 
             $linhasDoMes[] = [
@@ -125,26 +222,36 @@ class MesController extends Controller
         return response()->json([
             'ano_mes' => $ano_mes,
             'meta_diaria' => $metaDiaria,
+            'gasto_diario_real' => round($gastoDiarioReal, 2),
+            'dia_fechamento_fatura' => $config ? $config->dia_fechamento_fatura : null,
+            'dia_pagamento_fatura' => $config ? $config->dia_pagamento_fatura : null,
+            'dia_entrada' => $config ? $config->dia_entrada : null,
+            'valor_entrada' => $config ? (float) $config->valor_entrada : null,
             'dados' => $linhasDoMes
         ]);
     }
-    public function updateMeta(\Illuminate\Http\Request $request, string $ano_mes): JsonResponse
+
+    public function updateConfig(Request $request, string $ano_mes): JsonResponse
     {
         if (!preg_match('/^\d{4}-\d{2}$/', $ano_mes)) {
             return response()->json(['message' => 'Formato de mês inválido. Use YYYY-MM.'], 400);
         }
 
         $validated = $request->validate([
-            'meta_diaria' => 'required|numeric|min:0'
+            'meta_diaria' => 'sometimes|required|numeric|min:0',
+            'dia_fechamento_fatura' => 'nullable|integer|min:1|max:31',
+            'dia_pagamento_fatura' => 'nullable|integer|min:1|max:31',
+            'dia_entrada' => 'nullable|string|max:20',
+            'valor_entrada' => 'nullable|numeric|min:0',
         ]);
 
         $config = ConfiguracaoMes::updateOrCreate(
             ['ano_mes' => $ano_mes],
-            ['meta_diaria' => $validated['meta_diaria']]
+            $validated
         );
 
         return response()->json([
-            'message' => 'Meta diária atualizada com sucesso.',
+            'message' => 'Configurações atualizadas com sucesso.',
             'data' => $config
         ]);
     }
