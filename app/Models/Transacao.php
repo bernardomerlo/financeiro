@@ -17,6 +17,7 @@ class Transacao extends Model
         'data',
         'tipo',
         'valor',
+        'tag',
         'descricao',
     ];
 

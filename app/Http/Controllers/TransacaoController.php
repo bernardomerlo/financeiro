@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Transacao;
 use App\Models\ConfiguracaoMes;
+use App\Models\Transacao;
 use Carbon\Carbon;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class TransacaoController extends Controller
 {
@@ -18,6 +18,7 @@ class TransacaoController extends Controller
             'tipo' => 'required|in:entrada,saida,diario',
             'valor' => 'required|numeric|min:0',
             'descricao' => 'nullable|string|max:255',
+            'tag' => 'nullable|string|max:100',
             'cartao' => 'sometimes|boolean',
             'parcelas' => 'required_if:cartao,true|integer|min:1',
         ]);
@@ -29,13 +30,13 @@ class TransacaoController extends Controller
             $diaCompra = $dataCompra->day;
 
             $config = ConfiguracaoMes::where('ano_mes', $anoMesCompra)->first();
-            if (!$config) {
+            if (! $config) {
                 $config = ConfiguracaoMes::orderBy('ano_mes', 'desc')->first();
             }
 
-            if (!$config || !$config->dia_fechamento_fatura || !$config->dia_pagamento_fatura) {
+            if (! $config || ! $config->dia_fechamento_fatura || ! $config->dia_pagamento_fatura) {
                 return response()->json([
-                    'message' => 'Configure os dias de fechamento e pagamento da fatura primeiro na tela de Configurações.'
+                    'message' => 'Configure os dias de fechamento e pagamento da fatura primeiro na tela de Configurações.',
                 ], 400);
             }
 
@@ -43,6 +44,7 @@ class TransacaoController extends Controller
             $diaPagamento = $config->dia_pagamento_fatura;
             $parcelas = $validated['parcelas'];
             $valorParcela = $validated['valor'];
+            $tag = $validated['tag'] ?? null;
 
             $mesFaturaTarget = $dataCompra->copy()->startOfMonth();
 
@@ -68,7 +70,8 @@ class TransacaoController extends Controller
                     'data' => $dataPagamento->format('Y-m-d'),
                     'tipo' => 'saida',
                     'valor' => $valorParcela,
-                    'descricao' => $descricaoFinal
+                    'descricao' => $descricaoFinal,
+                    'tag' => $tag,
                 ]);
 
                 $mesFaturaTarget->addMonth();
@@ -76,7 +79,7 @@ class TransacaoController extends Controller
 
             return response()->json([
                 'message' => "Registrado com sucesso em $parcelas parcela(s) na fatura.",
-                'data' => $transacoesCriadas[0]
+                'data' => $transacoesCriadas[0],
             ], 201);
         }
 
@@ -86,7 +89,7 @@ class TransacaoController extends Controller
 
         return response()->json([
             'message' => 'Transação registrada com sucesso.',
-            'data' => $transacao
+            'data' => $transacao,
         ], 201);
     }
 
@@ -99,6 +102,7 @@ class TransacaoController extends Controller
             'tipo' => 'sometimes|required|in:entrada,saida,diario',
             'valor' => 'sometimes|required|numeric|min:0',
             'descricao' => 'nullable|string|max:255',
+            'tag' => 'sometimes|nullable|string|max:100',
         ]);
 
         if ($transacao->grupo_id) {
@@ -118,6 +122,7 @@ class TransacaoController extends Controller
                     'valor' => $validated['valor'] ?? $item->valor,
                     'descricao' => $novaDescricao,
                     'tipo' => $validated['tipo'] ?? $item->tipo,
+                    'tag' => array_key_exists('tag', $validated) ? $validated['tag'] : $item->tag,
                 ]);
 
                 // Só altera a data da transação exata que o usuário clicou (para não encavalar as faturas de outros meses)
@@ -134,7 +139,7 @@ class TransacaoController extends Controller
 
         return response()->json([
             'message' => 'Transação(ões) atualizada(s) com sucesso.',
-            'data' => Transacao::find($id)
+            'data' => Transacao::find($id),
         ]);
     }
 
@@ -150,7 +155,7 @@ class TransacaoController extends Controller
         }
 
         return response()->json([
-            'message' => 'Removido com sucesso.'
+            'message' => 'Removido com sucesso.',
         ]);
     }
 }

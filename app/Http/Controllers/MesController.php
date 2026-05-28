@@ -198,7 +198,7 @@ class MesController extends Controller
                 if ($diarioRealLinha > 0) {
                     $diario = $diarioRealLinha;
                 } else {
-                    $diario = $metaDiaria;
+                    $diario = 0;
                     $fantasma = true;
                 }
             } else {
