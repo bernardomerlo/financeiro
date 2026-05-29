@@ -1,4 +1,4 @@
-FROM php:8.2-apache
+FROM php:8.3-apache
 
 # 1. Instalar dependências do sistema e extensões do PHP
 RUN apt-get update && apt-get install -y \
@@ -13,11 +13,11 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-install pdo pdo_mysql pdo_pgsql mbstring exif pcntl bcmath gd \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Habilitar o mod_rewrite do Apache (essencial para as rotas do Laravel)
+# 2. Habilitar o mod_rewrite do Apache
 RUN a2enmod rewrite
 
-# 3. Mudar o DocumentRoot do Apache para a pasta public do Laravel
-ENV APACHE_DOCUMENT_ROOT /var/www/html/public
+# 3. Mudar o DocumentRoot do Apache para a pasta public do Laravel (Sintaxe ENV corrigida)
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
 RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
@@ -34,7 +34,7 @@ WORKDIR /var/www/html
 # 7. Copiar os arquivos do projeto para o container
 COPY . .
 
-# 8. Instalar as dependências do Laravel (otimizado para produção, sem pacotes dev)
+# 8. Instalar as dependências do Laravel
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
 # 9. Ajustar as permissões das pastas que o Laravel precisa escrever
