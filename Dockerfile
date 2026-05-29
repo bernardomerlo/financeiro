@@ -45,7 +45,6 @@ RUN chown -R www-data:www-data /var/www/html \
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENV PORT=8000
-EXPOSE ${PORT}
+EXPOSE 8000
 
 CMD ["/usr/local/bin/docker-entrypoint.sh"]
