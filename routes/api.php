@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ResumoController;
 use App\Http\Controllers\TransacaoController;
 use App\Http\Controllers\MesController;
 use Illuminate\Support\Facades\Route;
@@ -12,3 +13,4 @@ Route::get('/teste', function () {
     return response()->json(['message' => 'API is working']);
 });
 Route::post('/meses/{ano_mes}/config', [MesController::class, 'updateConfig']);
+Route::get('/resumo', [ResumoController::class, 'index']);
