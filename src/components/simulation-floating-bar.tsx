@@ -54,20 +54,21 @@ export function SimulationFloatingBar({ simulationImpact }: SimulationFloatingBa
   }
 
   return (
-    <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 max-w-[95vw]">
-      <div className="bg-[#141f17] text-white px-3.5 py-2 rounded-lg shadow-lg border border-[#2d4a35] flex items-center gap-3 text-xs tabular-nums">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="w-3.5 h-3.5 text-[#ffd966]" />
-          <span className="font-semibold">
+    <div className="fixed bottom-[76px] lg:bottom-3 left-1/2 -translate-x-1/2 z-40 w-[calc(100vw-24px)] sm:w-auto max-w-[95vw]">
+      <div className="bg-[#141f17] text-white px-3 py-2 rounded-xl lg:rounded-lg shadow-lg border border-[#2d4a35] flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 text-xs tabular-nums">
+        <div className="flex items-center gap-2 min-w-0">
+          <FlaskConical className="w-3.5 h-3.5 text-[#ffd966] shrink-0" />
+          <span className="font-semibold truncate">
             Simulação ({totalPending}): {formatBRL(simulationImpact, true)}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 ml-auto shrink-0">
           <button
             type="button"
             onClick={toggleIncludeSimulations}
-            className="h-7 px-2 rounded bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 cursor-pointer"
+            className="h-8 lg:h-7 px-2 rounded bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 cursor-pointer"
+            aria-label={includeSimulations ? "Ocultar simulação" : "Mostrar simulação"}
           >
             {includeSimulations ? (
               <Eye className="w-3.5 h-3.5 text-[#93c47d]" />
@@ -80,7 +81,7 @@ export function SimulationFloatingBar({ simulationImpact }: SimulationFloatingBa
             type="button"
             onClick={handleDiscard}
             disabled={isSaving}
-            className="h-7 px-2.5 rounded bg-white/10 hover:bg-[#cc0000] text-white flex items-center gap-1 cursor-pointer"
+            className="h-8 lg:h-7 px-2.5 rounded bg-white/10 hover:bg-[#cc0000] text-white flex items-center gap-1 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Descartar</span>
@@ -90,14 +91,14 @@ export function SimulationFloatingBar({ simulationImpact }: SimulationFloatingBa
             type="button"
             onClick={handleCommit}
             disabled={isSaving}
-            className="h-7 px-3 rounded bg-[#38761d] hover:bg-[#2b5c16] text-white font-semibold flex items-center gap-1 cursor-pointer"
+            className="h-8 lg:h-7 px-3 rounded bg-[#38761d] hover:bg-[#2b5c16] text-white font-semibold flex items-center gap-1 cursor-pointer"
           >
             {isSaving ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Check className="w-3.5 h-3.5" />
             )}
-            <span>Salvar Alterações</span>
+            <span>Salvar</span>
           </button>
         </div>
       </div>

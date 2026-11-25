@@ -1,23 +1,20 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
-  Plus,
-  FlaskConical,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
   ChevronRight,
-  Wallet,
-  BarChart3,
+  PlusCircle,
+  CalendarDays,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashflowStore } from "@/store/use-cashflow-store";
 import {
   addMonthsToYearMonth,
   calculateCashflowProjection,
-  LIQUIDITY_TIERS,
   type CashflowSettings,
   type ComputedDayRow,
   type ComputedMonthColumn,
@@ -32,7 +29,7 @@ import { LaunchModal } from "./launch-modal";
 import { DayDetailDrawer } from "./day-detail-drawer";
 import { SimulationFloatingBar } from "./simulation-floating-bar";
 import { SettingsAndRecurringModals } from "./settings-and-recurring-modals";
-import { upsertDailyOverrideAction, fetchInitialCashflowData } from "@/app/actions";
+import { MobileQuickEntry } from "./mobile-quick-entry";
 
 interface CashflowDashboardClientProps {
   initialData: {
@@ -59,14 +56,13 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
     stagedOverrides,
     stagedDeletedTxIds,
     includeSimulations,
-    openLaunchModal,
     selectedDayForDetail,
     setSelectedDayForDetail,
+    setRecurringModalOpen,
   } = useCashflowStore();
 
+  const [mobileTab, setMobileTab] = useState<"launch" | "month">("launch");
   const [showPastMobileDays, setShowPastMobileDays] = useState(false);
-  const [quickMobileAmount, setQuickMobileAmount] = useState("");
-  const [isQuickSaving, setIsQuickSaving] = useState(false);
 
   useEffect(() => {
     hydrateFromServer(initialData);
@@ -137,6 +133,8 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
     centerMonthCol.days[centerMonthCol.days.length - 1] ?? null;
   const projectedEndOfMonth =
     endOfCenterMonthRow?.projectedBalance ?? currentBalance;
+  const currentMonthEndBalance =
+    projection.currentMonthEndRow?.projectedBalance ?? projectedEndOfMonth;
 
   const selectedDayRow = selectedDayForDetail
     ? projection.allDaysMap[selectedDayForDetail] || null
@@ -165,28 +163,6 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
     toast.success("CSV exportado.");
   }
 
-  async function handleQuickMobileDailySave(e: React.FormEvent) {
-    e.preventDefault();
-    const val = parseFloat(quickMobileAmount.replace(",", "."));
-    if (isNaN(val) || val < 0) {
-      toast.error("Valor inválido.");
-      return;
-    }
-    setIsQuickSaving(true);
-    try {
-      await upsertDailyOverrideAction(activeSettings.referenceToday, val);
-      const fresh = await fetchInitialCashflowData();
-      hydrateFromServer(fresh);
-      setQuickMobileAmount("");
-      toast.success(`Diário atualizado: ${formatBRL(val)}`);
-    } catch (err) {
-      console.error(err);
-      toast.error("Erro ao salvar.");
-    } finally {
-      setIsQuickSaving(false);
-    }
-  }
-
   return (
     <div className="min-h-dvh lg:h-dvh lg:overflow-hidden flex flex-col bg-[#f4f6f4] text-[#141f17]">
       <TopNavbar
@@ -212,169 +188,172 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
         </div>
       </main>
 
-      {/* MOBILE VIEW: Current Month Only */}
-      <main className="flex lg:hidden flex-col flex-1 px-3 py-2.5 gap-2.5 pb-20">
-        <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-[#cfd8d2]">
-          <button
-            type="button"
-            onClick={() => navigateMonths(-1)}
-            className="min-w-[44px] min-h-[44px] rounded-md border border-[#d8e0da] flex items-center justify-center text-[#141f17]"
-            aria-label="Mês anterior"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <div className="text-sm font-bold text-[#141f17]">{centerMonthCol.title}</div>
-          <button
-            type="button"
-            onClick={() => navigateMonths(1)}
-            className="min-w-[44px] min-h-[44px] rounded-md border border-[#d8e0da] flex items-center justify-center text-[#141f17]"
-            aria-label="Próximo mês"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="bg-white p-2.5 rounded-lg border border-[#cfd8d2]">
-            <div className="text-[11px] text-[#526657]">
-              Hoje ({formatShortDate(activeSettings.referenceToday)})
-            </div>
-            <div className="text-base font-bold tabular-nums text-[#141f17]">
-              {formatBRL(currentBalance)}
-            </div>
-          </div>
-
-          <div className="bg-white p-2.5 rounded-lg border border-[#cfd8d2]">
-            <div className="text-[11px] text-[#526657]">Fim do Mês</div>
-            <div className="text-base font-bold tabular-nums text-[#1b5e20]">
-              {formatBRL(projectedEndOfMonth)}
-            </div>
-          </div>
-        </div>
-
-        <form
-          onSubmit={handleQuickMobileDailySave}
-          className="bg-white p-2.5 rounded-lg border border-[#cfd8d2] flex items-center gap-2"
-        >
-          <input
-            type="text"
-            inputMode="decimal"
-            placeholder="Diário de hoje (R$)"
-            value={quickMobileAmount}
-            onChange={(e) => setQuickMobileAmount(e.target.value)}
-            className="flex-1 min-h-[44px] px-3 rounded-md border border-[#c5d1c8] text-sm font-semibold"
+      {/* MOBILE VIEW: Quick Entry Hub (default) + Monthly Statement tab */}
+      <main className="flex lg:hidden flex-col flex-1 px-3 py-3 gap-3 pb-24">
+        {mobileTab === "launch" ? (
+          <MobileQuickEntry
+            currentBalance={currentBalance}
+            currentMonthEndBalance={currentMonthEndBalance}
+            simulationImpact={projection.totalSimulationImpactOnCurrentMonth}
+            settings={activeSettings}
+            allDaysMap={projection.allDaysMap}
+            transactions={mergedTransactions}
+            dailyOverrides={mergedOverrides}
           />
-          <button
-            type="submit"
-            disabled={isQuickSaving}
-            className="min-h-[44px] px-4 rounded-md bg-[#2d6a3e] text-white text-xs font-semibold shrink-0"
-          >
-            Salvar
-          </button>
-        </form>
+        ) : (
+          <>
+            <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-[#cfd8d2]">
+              <button
+                type="button"
+                onClick={() => navigateMonths(-1)}
+                className="min-w-[44px] min-h-[44px] rounded-lg border border-[#d8e0da] flex items-center justify-center text-[#141f17] active:bg-[#eff3f0] cursor-pointer"
+                aria-label="Mês anterior"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <div className="text-sm font-bold text-[#141f17]">{centerMonthCol.title}</div>
+              <button
+                type="button"
+                onClick={() => navigateMonths(1)}
+                className="min-w-[44px] min-h-[44px] rounded-lg border border-[#d8e0da] flex items-center justify-center text-[#141f17] active:bg-[#eff3f0] cursor-pointer"
+                aria-label="Próximo mês"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
 
-        <div className="bg-white rounded-lg border border-[#cfd8d2] overflow-hidden">
-          {centerMonthCol.days.some((d) => d.isPast) && (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-white p-2.5 rounded-xl border border-[#cfd8d2]">
+                <div className="text-[11px] text-[#526657]">
+                  Hoje ({formatShortDate(activeSettings.referenceToday)})
+                </div>
+                <div className="text-base font-bold tabular-nums text-[#141f17]">
+                  {formatBRL(currentBalance)}
+                </div>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-xl border border-[#cfd8d2]">
+                <div className="text-[11px] text-[#526657]">Fim do Mês</div>
+                <div className="text-base font-bold tabular-nums text-[#1b5e20]">
+                  {formatBRL(projectedEndOfMonth)}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-[#cfd8d2] overflow-hidden">
+              {centerMonthCol.days.some((d) => d.isPast) && (
+                <button
+                  type="button"
+                  onClick={() => setShowPastMobileDays(!showPastMobileDays)}
+                  className="w-full min-h-[44px] px-3.5 py-2 bg-[#e3ebe5] border-b border-[#cfd8d2] flex items-center justify-between text-xs font-semibold text-[#1f3325] cursor-pointer"
+                >
+                  <span>
+                    {showPastMobileDays
+                      ? "Ocultar dias passados"
+                      : `Mostrar passados (${centerMonthCol.days.filter((d) => d.isPast).length})`}
+                  </span>
+                  {showPastMobileDays ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </button>
+              )}
+
+              <div className="divide-y divide-[#e4ebe6]">
+                {centerMonthCol.days
+                  .filter((d) => showPastMobileDays || !d.isPast)
+                  .map((d) => (
+                    <div
+                      key={d.date}
+                      onClick={() => setSelectedDayForDetail(d.date)}
+                      className={`px-3.5 py-3 flex items-center justify-between gap-2 cursor-pointer active:brightness-95 ${
+                        d.isToday
+                          ? "bg-[#c6decb] border-l-4 border-l-[#1b5e20] font-semibold"
+                          : d.isPast
+                          ? "bg-[#e3ebe5]"
+                          : d.hasSimulation
+                          ? "bg-[#fdf6e2]"
+                          : "bg-white"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-[#141f17]">
+                          <span>{formatFullDate(d.date)}</span>
+                          {d.isToday && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#1b5e20] text-white">
+                              HOJE
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-[#4e6153] mt-0.5 flex flex-wrap items-center gap-2">
+                          {d.dailyAmount > 0 && <span>Diário: {formatBRL(d.dailyAmount)}</span>}
+                          {d.fixedExpenseTotal > 0 && (
+                            <span className="text-[#9e1c1c]">
+                              Saída: {formatBRL(d.fixedExpenseTotal)}
+                            </span>
+                          )}
+                          {d.incomeTotal > 0 && (
+                            <span className="text-[#1b5e20]">
+                              Entrada: {formatBRL(d.incomeTotal)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <span
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold tabular-nums ${d.liquidity.bgClass}`}
+                      >
+                        {formatBRL(d.projectedBalance)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Mobile Bottom Navigation Bar */}
+        <nav
+          aria-label="Navegação mobile"
+          className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-[#cfd8d2] px-2 pt-1.5 pb-safe z-30 shadow-[0_-2px_10px_rgba(20,31,23,0.06)]"
+        >
+          <div className="grid grid-cols-3 gap-1 pb-1.5">
             <button
               type="button"
-              onClick={() => setShowPastMobileDays(!showPastMobileDays)}
-              className="w-full min-h-[44px] px-3 py-2 bg-[#e3ebe5] border-b border-[#cfd8d2] flex items-center justify-between text-xs font-semibold text-[#1f3325]"
+              onClick={() => setMobileTab("launch")}
+              className={`min-h-[48px] rounded-xl flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors cursor-pointer ${
+                mobileTab === "launch"
+                  ? "bg-[#e8f5e9] text-[#2d6a3e]"
+                  : "text-[#4e6153] active:bg-[#eff3f0]"
+              }`}
             >
-              <span>
-                {showPastMobileDays
-                  ? "Ocultar passados"
-                  : `Passados (${centerMonthCol.days.filter((d) => d.isPast).length})`}
-              </span>
-              {showPastMobileDays ? (
-                <ChevronUp className="w-4 h-4" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
-              )}
+              <PlusCircle className="w-5 h-5" />
+              <span>Lançar</span>
             </button>
-          )}
 
-          <div className="divide-y divide-[#e4ebe6]">
-            {centerMonthCol.days
-              .filter((d) => showPastMobileDays || !d.isPast)
-              .map((d) => (
-                <div
-                  key={d.date}
-                  onClick={() => setSelectedDayForDetail(d.date)}
-                  className={`p-2.5 flex items-center justify-between gap-2 cursor-pointer ${
-                    d.isToday
-                      ? "bg-[#c6decb] border-l-4 border-l-[#1b5e20] font-semibold"
-                      : d.isPast
-                      ? "bg-[#e3ebe5]"
-                      : d.hasSimulation
-                      ? "bg-[#fdf6e2]"
-                      : "bg-white"
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#141f17]">
-                      <span>{formatFullDate(d.date)}</span>
-                      {d.isToday && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#1b5e20] text-white">
-                          HOJE
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-[#4e6153] mt-0.5 flex flex-wrap items-center gap-2">
-                      {d.dailyAmount > 0 && <span>Diário: {formatBRL(d.dailyAmount)}</span>}
-                      {d.fixedExpenseTotal > 0 && (
-                        <span className="text-[#9e1c1c]">
-                          Saída: {formatBRL(d.fixedExpenseTotal)}
-                        </span>
-                      )}
-                      {d.incomeTotal > 0 && (
-                        <span className="text-[#1b5e20]">
-                          Entrada: {formatBRL(d.incomeTotal)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+            <button
+              type="button"
+              onClick={() => setMobileTab("month")}
+              className={`min-h-[48px] rounded-xl flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors cursor-pointer ${
+                mobileTab === "month"
+                  ? "bg-[#e8f5e9] text-[#2d6a3e]"
+                  : "text-[#4e6153] active:bg-[#eff3f0]"
+              }`}
+            >
+              <CalendarDays className="w-5 h-5" />
+              <span>Extrato</span>
+            </button>
 
-                  <span
-                    className={`px-2.5 py-1 rounded text-xs font-bold tabular-nums ${d.liquidity.bgClass}`}
-                  >
-                    {formatBRL(d.projectedBalance)}
-                  </span>
-                </div>
-              ))}
+            <button
+              type="button"
+              onClick={() => setRecurringModalOpen(true)}
+              className="min-h-[48px] rounded-xl flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold text-[#4e6153] active:bg-[#eff3f0] transition-colors cursor-pointer"
+            >
+              <CalendarClock className="w-5 h-5" />
+              <span>Fixos</span>
+            </button>
           </div>
-        </div>
-
-        <nav className="fixed bottom-0 left-0 right-0 h-15 bg-white border-t border-[#cfd8d2] px-3 flex items-center justify-around z-30">
-          <Link
-            href="/"
-            className="min-h-[44px] px-3 flex flex-col items-center justify-center text-[11px] font-semibold text-[#2d6a3e]"
-          >
-            <Wallet className="w-4 h-4" />
-            <span>Fluxo</span>
-          </Link>
-          <button
-            type="button"
-            onClick={() => openLaunchModal({ isSimulation: false, type: "expense_fixed" })}
-            className="min-h-[44px] px-4 rounded-lg bg-[#2d6a3e] text-white flex items-center gap-1.5 text-xs font-semibold"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Saída</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => openLaunchModal({ isSimulation: true, type: "expense_fixed" })}
-            className="min-h-[44px] px-3 flex flex-col items-center justify-center text-[11px] font-medium text-[#5c4300]"
-          >
-            <FlaskConical className="w-4 h-4" />
-            <span>Simular</span>
-          </button>
-          <Link
-            href="/insights"
-            className="min-h-[44px] px-3 flex flex-col items-center justify-center text-[11px] font-medium text-[#4e6153]"
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Metas</span>
-          </Link>
         </nav>
       </main>
 

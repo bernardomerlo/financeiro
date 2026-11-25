@@ -25,7 +25,7 @@ import {
   formatMonthTitle,
   getLocalTodayIsoDate,
 } from "@/lib/cashflow-engine";
-import { formatBRL, formatFullDate } from "@/lib/format";
+import { formatBRL, formatFullDate, formatShortDate } from "@/lib/format";
 import { AUTH_CACHE_KEY } from "@/lib/auth";
 import { logoutAction } from "@/app/actions";
 import { KeyboardShortcutsAndPalette } from "./keyboard-shortcuts-and-palette";
@@ -157,7 +157,65 @@ export function TopNavbar({
   return (
     <>
       <KeyboardShortcutsAndPalette />
-      <header className="h-11 bg-white border-b border-[#d8e0da] px-3 flex items-center justify-between gap-2 select-none shrink-0 z-30">
+
+      {/* MOBILE HEADER: Compact & clean, optimized for quick entry */}
+      <header className="flex lg:hidden h-12 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30 sticky top-0">
+        <Link href="/" className="flex items-center gap-2 min-w-0">
+          <span className="w-7 h-7 rounded-lg bg-[#2d6a3e] text-white flex items-center justify-center shrink-0">
+            <Table2 className="w-3.5 h-3.5" />
+          </span>
+          <div className="min-w-0 leading-tight">
+            <div className="text-sm font-bold text-[#141f17] truncate">CashFlow</div>
+            <div className="text-[11px] font-medium text-[#526657]">
+              Hoje • {formatShortDate(settings.referenceToday)}
+            </div>
+          </div>
+        </Link>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {pathname !== "/insights" ? (
+            <Link
+              href="/insights"
+              className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center"
+              aria-label="Metas e Relatórios"
+              title="Metas"
+            >
+              <BarChart3 className="w-4 h-4 text-[#2d6a3e]" />
+            </Link>
+          ) : (
+            <Link
+              href="/"
+              className="h-9 px-2.5 rounded-lg border border-[#d5ded8] bg-[#eff3f0] text-[#141f17] flex items-center gap-1.5 text-xs font-semibold"
+            >
+              <Plus className="w-3.5 h-3.5 text-[#2d6a3e]" />
+              <span>Lançar</span>
+            </Link>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setSettingsModalOpen(true)}
+            className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-white active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center cursor-pointer"
+            aria-label="Configurações"
+            title="Configurações"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleLock}
+            className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-white active:bg-[#eff3f0] text-[#526657] flex items-center justify-center cursor-pointer"
+            aria-label="Bloquear Sessão"
+            title="Bloquear Sessão"
+          >
+            <Lock className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* DESKTOP HEADER: Full analytical toolbar */}
+      <header className="hidden lg:flex h-11 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30">
         {/* Left: Animated Tabs (Aceternity layoutId style) & Quarter Navigator */}
         <div className="flex items-center gap-2">
           <nav className="relative flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">

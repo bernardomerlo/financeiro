@@ -183,7 +183,7 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
   return (
     <AnimatePresence>
       {isLaunchModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-3">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -193,15 +193,19 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
             onClick={closeLaunchModal}
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-            className="relative bg-white w-full max-w-md rounded-xl shadow-2xl border border-[#cfd8d2] overflow-hidden z-10"
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 28 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="relative bg-white w-full lg:max-w-md rounded-t-2xl lg:rounded-xl shadow-2xl border-t lg:border border-[#cfd8d2] overflow-hidden z-10 pb-safe"
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-launch-title"
           >
+            <div className="flex lg:hidden justify-center pt-2 pb-1 bg-[#eff3f0]">
+              <span className="w-10 h-1 rounded-full bg-[#b9c7bd]" />
+            </div>
+
             <div className="px-4 py-3 border-b border-[#d8e0da] flex items-center justify-between bg-[#eff3f0]">
               <h2 id="modal-launch-title" className="text-sm font-bold text-[#141f17]">
                 {txType === "expense_fixed"
@@ -212,13 +216,13 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
                 • {formatFullDate(date)}
               </h2>
               <div className="flex items-center gap-1.5">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
+                <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
                   Esc
                 </kbd>
                 <button
                   type="button"
                   onClick={closeLaunchModal}
-                  className="p-1 rounded-md text-[#526657] hover:bg-white cursor-pointer"
+                  className="w-9 h-9 lg:w-auto lg:h-auto lg:p-1 rounded-lg lg:rounded-md text-[#526657] hover:bg-white flex items-center justify-center cursor-pointer"
                   aria-label="Fechar modal"
                 >
                   <X className="w-4 h-4" />
@@ -329,7 +333,7 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
                     required
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-xs font-semibold text-[#141f17]"
+                    className="h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-base lg:text-xs font-semibold text-[#141f17]"
                   />
                   <div className="flex items-center gap-1">
                     <button
@@ -408,7 +412,7 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
                       disabled={paymentMethod !== "credit_card"}
                       value={installments}
                       onChange={(e) => setInstallments(Number(e.target.value))}
-                      className="w-full h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-xs font-semibold text-[#141f17] disabled:opacity-50"
+                      className="w-full h-10 lg:h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-base lg:text-xs font-semibold text-[#141f17] disabled:opacity-50"
                     >
                       {Array.from({ length: 18 }, (_, i) => i + 1).map((n) => (
                         <option key={n} value={n}>
@@ -433,18 +437,18 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
               )}
 
               {/* Descrição & Categoria (Opcionais) */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
                   placeholder="Descrição (opcional)"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-xs text-[#141f17]"
+                  className="h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-base lg:text-xs text-[#141f17]"
                 />
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
+                  className="h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-white text-base lg:text-xs text-[#141f17]"
                 >
                   <option value="">Categoria (opcional)</option>
                   {CATEGORIES.map((cat) => (
@@ -472,14 +476,14 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
                 <button
                   type="button"
                   onClick={closeLaunchModal}
-                  className="h-9 px-4 rounded-lg border border-[#d5ded8] text-xs font-semibold text-[#4e6153] cursor-pointer"
+                  className="min-h-[44px] lg:min-h-0 lg:h-9 px-4 rounded-lg border border-[#d5ded8] text-xs font-semibold text-[#4e6153] cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className={`h-9 px-5 rounded-lg text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer ${
+                  className={`min-h-[44px] lg:min-h-0 lg:h-9 px-5 rounded-lg text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer ${
                     isSimulation
                       ? "bg-[#7c5800] hover:bg-[#5c4300]"
                       : "bg-[#2d6a3e] hover:bg-[#204f2d]"

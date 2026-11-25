@@ -125,7 +125,7 @@ export function SettingsAndRecurringModals() {
     <>
       <AnimatePresence>
         {isSettingsModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+          <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-3">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -135,46 +135,52 @@ export function SettingsAndRecurringModals() {
               onClick={() => setSettingsModalOpen(false)}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.14, ease: "easeOut" }}
-              className="relative bg-white w-full max-w-md rounded-xl shadow-2xl border border-[#cfd8d2] overflow-hidden z-10"
+              initial={{ opacity: 0, y: 28 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 28 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="relative bg-white w-full lg:max-w-md rounded-t-2xl lg:rounded-xl shadow-2xl border-t lg:border border-[#cfd8d2] overflow-hidden z-10 pb-safe"
               role="dialog"
               aria-modal="true"
               aria-label="Configurações"
             >
+              <div className="flex lg:hidden justify-center pt-2 pb-1 bg-[#eff3f0]">
+                <span className="w-10 h-1 rounded-full bg-[#b9c7bd]" />
+              </div>
+
               <div className="px-4 py-3 border-b border-[#d8e0da] flex items-center justify-between bg-[#eff3f0]">
                 <div className="flex items-center gap-2">
                   <SlidersHorizontal className="w-4 h-4 text-[#2d6a3e]" />
                   <h3 className="text-sm font-bold text-[#141f17]">Configurações</h3>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <kbd className="px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
+                  <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
                     Esc
                   </kbd>
                   <button
                     type="button"
                     onClick={() => setSettingsModalOpen(false)}
-                    className="p-1 rounded hover:bg-white text-[#526657] cursor-pointer"
+                    className="w-9 h-9 lg:w-auto lg:h-auto lg:p-1 rounded-lg lg:rounded hover:bg-white text-[#526657] flex items-center justify-center cursor-pointer"
+                    aria-label="Fechar configurações"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              <form onSubmit={handleSaveSettings} className="p-4 space-y-3.5 text-xs">
-                <div className="grid grid-cols-2 gap-3">
+              <form onSubmit={handleSaveSettings} className="p-4 space-y-3.5 text-xs max-h-[80dvh] overflow-y-auto thin-scroll">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-semibold text-[#526657] mb-1">
                       Saldo Inicial (R$)
                     </label>
                     <input
                       type="text"
+                      inputMode="decimal"
                       required
                       value={initialBalance}
                       onChange={(e) => setInitialBalance(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-lg border border-[#c5d1c8] font-bold"
+                      className="w-full h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-base lg:text-xs font-bold"
                     />
                   </div>
                   <div>
@@ -186,29 +192,30 @@ export function SettingsAndRecurringModals() {
                       required
                       value={initialBalanceDate}
                       onChange={(e) => setInitialBalanceDate(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-lg border border-[#c5d1c8]"
+                      className="w-full h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-base lg:text-xs"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-semibold text-[#526657] mb-1">
                       Meta Diária (R$)
                     </label>
                     <input
                       type="text"
+                      inputMode="decimal"
                       required
                       value={dailyTarget}
                       onChange={(e) => setDailyTarget(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-lg border border-[#c5d1c8] font-bold text-[#2d6a3e]"
+                      className="w-full h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-base lg:text-xs font-bold text-[#2d6a3e]"
                     />
                   </div>
                   <div>
                     <label className="block font-semibold text-[#526657] mb-1">
                       Dia Atual (Automático)
                     </label>
-                    <div className="w-full h-9 px-2.5 rounded-lg border border-[#d5ded8] bg-[#eff3f0] flex items-center justify-between text-[#141f17] font-semibold">
+                    <div className="w-full h-11 lg:h-9 px-2.5 rounded-lg border border-[#d5ded8] bg-[#eff3f0] flex items-center justify-between text-[#141f17] font-semibold">
                       <span>{formatFullDate(settings.referenceToday)}</span>
                       <span className="text-[10px] font-bold text-[#2d6a3e] bg-[#e8f5e9] border border-[#a5d6a7] px-1.5 py-0.5 rounded">
                         Dinâmico
@@ -229,7 +236,7 @@ export function SettingsAndRecurringModals() {
                       required
                       value={closingDay}
                       onChange={(e) => setClosingDay(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-lg border border-[#c5d1c8]"
+                      className="w-full h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-base lg:text-xs"
                     />
                   </div>
                   <div>
@@ -243,7 +250,7 @@ export function SettingsAndRecurringModals() {
                       required
                       value={dueDay}
                       onChange={(e) => setDueDay(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-lg border border-[#c5d1c8]"
+                      className="w-full h-11 lg:h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-base lg:text-xs"
                     />
                   </div>
                 </div>
@@ -252,14 +259,14 @@ export function SettingsAndRecurringModals() {
                   <button
                     type="button"
                     onClick={() => setSettingsModalOpen(false)}
-                    className="h-9 px-4 rounded-lg border border-[#d5ded8] text-[#4e6153] font-semibold cursor-pointer"
+                    className="min-h-[44px] lg:min-h-0 lg:h-9 px-4 rounded-lg border border-[#d5ded8] text-[#4e6153] font-semibold cursor-pointer"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={isSavingSettings}
-                    className="h-9 px-4 rounded-lg bg-[#2d6a3e] text-white font-semibold flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[44px] lg:min-h-0 lg:h-9 px-4 rounded-lg bg-[#2d6a3e] text-white font-semibold flex items-center gap-1.5 cursor-pointer"
                   >
                     {isSavingSettings ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -277,7 +284,7 @@ export function SettingsAndRecurringModals() {
 
       <AnimatePresence>
         {isRecurringModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+          <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-3">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -287,35 +294,40 @@ export function SettingsAndRecurringModals() {
               onClick={() => setRecurringModalOpen(false)}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.14, ease: "easeOut" }}
-              className="relative bg-white w-full max-w-lg rounded-xl shadow-2xl border border-[#cfd8d2] overflow-hidden z-10"
+              initial={{ opacity: 0, y: 28 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 28 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="relative bg-white w-full lg:max-w-lg rounded-t-2xl lg:rounded-xl shadow-2xl border-t lg:border border-[#cfd8d2] overflow-hidden z-10 pb-safe"
               role="dialog"
               aria-modal="true"
               aria-label="Contas Fixas"
             >
+              <div className="flex lg:hidden justify-center pt-2 pb-1 bg-[#eff3f0]">
+                <span className="w-10 h-1 rounded-full bg-[#b9c7bd]" />
+              </div>
+
               <div className="px-4 py-3 border-b border-[#d8e0da] flex items-center justify-between bg-[#eff3f0]">
                 <div className="flex items-center gap-2">
                   <CalendarClock className="w-4 h-4 text-[#2d6a3e]" />
                   <h3 className="text-sm font-bold text-[#141f17]">Contas Fixas</h3>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <kbd className="px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
+                  <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
                     Esc
                   </kbd>
                   <button
                     type="button"
                     onClick={() => setRecurringModalOpen(false)}
-                    className="p-1 rounded hover:bg-white text-[#526657] cursor-pointer"
+                    className="w-9 h-9 lg:w-auto lg:h-auto lg:p-1 rounded-lg lg:rounded hover:bg-white text-[#526657] flex items-center justify-center cursor-pointer"
+                    aria-label="Fechar contas fixas"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              <div className="p-4 space-y-4 max-h-[80dvh] overflow-y-auto thin-scroll text-xs">
+              <div className="p-4 space-y-4 max-h-[82dvh] lg:max-h-[80dvh] overflow-y-auto thin-scroll text-xs">
                 <form
                   onSubmit={handleAddRecurring}
                   className="p-3 rounded-lg bg-[#eff3f0] border border-[#d5ded8] space-y-2.5"
@@ -328,28 +340,29 @@ export function SettingsAndRecurringModals() {
                         placeholder="Descrição"
                         value={recTitle}
                         onChange={(e) => setRecTitle(e.target.value)}
-                        className="w-full h-8 px-2.5 rounded border border-[#c5d1c8] bg-white"
+                        className="w-full h-11 lg:h-8 px-2.5 rounded-lg lg:rounded border border-[#c5d1c8] bg-white text-base lg:text-xs"
                       />
                     </div>
                     <div>
                       <input
                         type="text"
+                        inputMode="decimal"
                         required
                         placeholder="Valor (R$)"
                         value={recAmount}
                         onChange={(e) => setRecAmount(e.target.value)}
-                        className="w-full h-8 px-2.5 rounded border border-[#c5d1c8] bg-white font-semibold"
+                        className="w-full h-11 lg:h-8 px-2.5 rounded-lg lg:rounded border border-[#c5d1c8] bg-white text-base lg:text-xs font-semibold"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <select
                       value={recType}
                       onChange={(e) =>
                         setRecType(e.target.value as "income" | "expense_fixed")
                       }
-                      className="w-full h-8 px-2 rounded border border-[#c5d1c8] bg-white"
+                      className="w-full h-11 lg:h-8 px-2 rounded-lg lg:rounded border border-[#c5d1c8] bg-white text-base lg:text-xs"
                     >
                       <option value="expense_fixed">Saída (-)</option>
                       <option value="income">Entrada (+)</option>
@@ -362,12 +375,12 @@ export function SettingsAndRecurringModals() {
                       placeholder="Dia (1-31)"
                       value={recDay}
                       onChange={(e) => setRecDay(e.target.value)}
-                      className="w-full h-8 px-2.5 rounded border border-[#c5d1c8] bg-white"
+                      className="w-full h-11 lg:h-8 px-2.5 rounded-lg lg:rounded border border-[#c5d1c8] bg-white text-base lg:text-xs"
                     />
                     <select
                       value={recCategory}
                       onChange={(e) => setRecCategory(e.target.value)}
-                      className="w-full h-8 px-2 rounded border border-[#c5d1c8] bg-white"
+                      className="w-full h-11 lg:h-8 px-2 rounded-lg lg:rounded border border-[#c5d1c8] bg-white text-base lg:text-xs"
                     >
                       {CATEGORIES.map((c) => (
                         <option key={c} value={c}>
@@ -381,7 +394,7 @@ export function SettingsAndRecurringModals() {
                     <button
                       type="submit"
                       disabled={isSavingRec}
-                      className="h-8 px-3 rounded bg-[#2d6a3e] text-white font-semibold flex items-center gap-1 cursor-pointer"
+                      className="w-full sm:w-auto min-h-[44px] lg:min-h-0 lg:h-8 px-3 rounded-lg lg:rounded bg-[#2d6a3e] text-white font-semibold flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Adicionar</span>
@@ -393,15 +406,15 @@ export function SettingsAndRecurringModals() {
                   {recurringRules.map((rule) => (
                     <div
                       key={rule.id}
-                      className="p-2.5 rounded-lg border border-[#d5ded8] flex items-center justify-between"
+                      className="p-2.5 rounded-lg border border-[#d5ded8] flex items-center justify-between gap-2"
                     >
-                      <div className="flex items-center gap-2 font-semibold text-[#141f17]">
-                        <span>{rule.title}</span>
-                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#eff3f0] border border-[#d5ded8]">
+                      <div className="flex items-center gap-2 font-semibold text-[#141f17] min-w-0">
+                        <span className="truncate">{rule.title}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#eff3f0] border border-[#d5ded8] shrink-0">
                           Dia {String(rule.dayOfMonth).padStart(2, "0")}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span
                           className={`font-bold ${
                             rule.type === "income"
@@ -414,7 +427,8 @@ export function SettingsAndRecurringModals() {
                         <button
                           type="button"
                           onClick={() => handleDeleteRecurring(rule.id)}
-                          className="p-1 rounded hover:bg-[#ffebee] text-[#9e1c1c] cursor-pointer"
+                          className="w-9 h-9 lg:w-auto lg:h-auto lg:p-1 rounded-lg lg:rounded hover:bg-[#ffebee] text-[#9e1c1c] flex items-center justify-center cursor-pointer"
+                          aria-label="Excluir conta fixa"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

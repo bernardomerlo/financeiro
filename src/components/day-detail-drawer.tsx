@@ -243,7 +243,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
   return (
     <AnimatePresence>
       {dayRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-3">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -253,15 +253,20 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
             onClick={onClose}
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ duration: 0.14, ease: "easeOut" }}
-            className="relative w-full max-w-sm bg-white rounded-xl shadow-2xl border border-[#cfd8d2] overflow-hidden z-10"
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 28 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="relative w-full lg:max-w-sm bg-white rounded-t-2xl lg:rounded-xl shadow-2xl border-t lg:border border-[#cfd8d2] overflow-hidden z-10 pb-safe"
             role="dialog"
             aria-modal="true"
             aria-label={`${columnTitle} ${formatFullDate(dayRow.date)}`}
           >
+            {/* Mobile Sheet Handle */}
+            <div className="flex lg:hidden justify-center pt-2 pb-1 bg-[#eff3f0]">
+              <span className="w-10 h-1 rounded-full bg-[#b9c7bd]" />
+            </div>
+
             {/* Header with Date & Saldo */}
             <div className="px-4 py-2.5 border-b border-[#d8e0da] flex items-center justify-between bg-[#eff3f0]">
               <div className="flex items-center gap-2">
@@ -275,13 +280,14 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
+                <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
                   Esc
                 </kbd>
                 <button
                   type="button"
                   onClick={onClose}
-                  className="p-1 rounded hover:bg-white text-[#4e6153] cursor-pointer"
+                  className="w-9 h-9 lg:w-auto lg:h-auto lg:p-1 rounded-lg lg:rounded hover:bg-white text-[#4e6153] flex items-center justify-center cursor-pointer"
+                  aria-label="Fechar"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -304,7 +310,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                       key={tab.id}
                       type="button"
                       onClick={() => setSelectedDayForDetail(dayRow.date, tab.id)}
-                      className={`relative py-1.5 rounded text-xs font-semibold cursor-pointer z-10 ${
+                      className={`relative min-h-[38px] lg:min-h-0 py-1.5 rounded text-xs font-semibold cursor-pointer z-10 ${
                         active ? tab.color : "text-[#4e6153]"
                       }`}
                     >
@@ -323,7 +329,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
             </div>
 
             {/* Body specific to the clicked column */}
-            <div className="p-4 space-y-3.5 max-h-[75dvh] overflow-y-auto thin-scroll">
+            <div className="p-4 space-y-3.5 max-h-[78dvh] lg:max-h-[75dvh] overflow-y-auto thin-scroll">
               {activeCol === "expense_daily" ? (
                 /* DIÁRIO VIEW */
                 <div className="space-y-3">
@@ -364,7 +370,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                       type="button"
                       disabled={isBusy}
                       onClick={() => handleSaveDailyToDb(dayRow, parsedDaily)}
-                      className="h-9 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
+                      className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>Salvar</span>
@@ -374,7 +380,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                       type="button"
                       disabled={isBusy}
                       onClick={() => handleSaveDailyToDb(dayRow, 0)}
-                      className="h-9 rounded-lg border border-[#e06666] bg-[#ffebee] hover:bg-[#ffcdd2] text-[#8e1414] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
+                      className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg border border-[#e06666] bg-[#ffebee] hover:bg-[#ffcdd2] text-[#8e1414] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Zerar</span>
@@ -383,7 +389,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                     <button
                       type="button"
                       onClick={() => handleSimulateDailyInMemory(dayRow, parsedDaily)}
-                      className="h-9 rounded-lg border border-[#d9c27e] bg-[#fdf6e2] hover:bg-[#faeec9] text-[#5c4300] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
+                      className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg border border-[#d9c27e] bg-[#fdf6e2] hover:bg-[#faeec9] text-[#5c4300] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <FlaskConical className="w-3.5 h-3.5" />
                       <span>Simular</span>
@@ -420,20 +426,20 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                                       handleSaveEditedItem(item);
                                     }
                                   }}
-                                  className="flex-1 h-8 px-2 rounded border border-[#2d6a3e] bg-white text-right text-xs font-bold"
+                                  className="flex-1 h-10 lg:h-8 px-2 rounded border border-[#2d6a3e] bg-white text-right text-base lg:text-xs font-bold"
                                 />
                                 <button
                                   type="button"
                                   disabled={isBusy}
                                   onClick={() => handleSaveEditedItem(item)}
-                                  className="h-8 px-2.5 rounded bg-[#2d6a3e] text-white text-xs font-semibold cursor-pointer"
+                                  className="h-10 lg:h-8 px-3 lg:px-2.5 rounded bg-[#2d6a3e] text-white text-xs font-semibold cursor-pointer"
                                 >
                                   OK
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setEditingItemId(null)}
-                                  className="h-8 px-2 rounded border border-[#cfd8d2] text-xs cursor-pointer"
+                                  className="h-10 lg:h-8 px-2.5 lg:px-2 rounded border border-[#cfd8d2] text-xs cursor-pointer"
                                 >
                                   X
                                 </button>
@@ -596,7 +602,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                           disabled={paymentMethod !== "credit_card"}
                           value={installments}
                           onChange={(e) => setInstallments(Number(e.target.value))}
-                          className="h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-xs font-semibold disabled:opacity-50"
+                          className="h-10 lg:h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-base lg:text-xs font-semibold disabled:opacity-50"
                         >
                           {Array.from({ length: 18 }, (_, i) => i + 1).map((n) => (
                             <option key={n} value={n}>
@@ -607,18 +613,18 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
                         type="text"
                         placeholder="Descrição (opcional)"
                         value={newDesc}
                         onChange={(e) => setNewDesc(e.target.value)}
-                        className="h-8 px-2.5 rounded-md border border-[#c5d1c8] text-xs"
+                        className="h-10 lg:h-8 px-2.5 rounded-md border border-[#c5d1c8] text-base lg:text-xs"
                       />
                       <select
                         value={newCategory}
                         onChange={(e) => setNewCategory(e.target.value)}
-                        className="h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-xs"
+                        className="h-10 lg:h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-base lg:text-xs"
                       >
                         <option value="">Categoria (opcional)</option>
                         {CATEGORIES.map((c) => (
@@ -634,7 +640,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                         type="button"
                         disabled={isBusy}
                         onClick={() => handleAddMovement(dayRow, false)}
-                        className="h-9 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
+                        className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Salvar {columnTitle}</span>
@@ -644,7 +650,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                         type="button"
                         disabled={isBusy}
                         onClick={() => handleAddMovement(dayRow, true)}
-                        className="h-9 rounded-lg border border-[#d9c27e] bg-[#fdf6e2] hover:bg-[#faeec9] text-[#5c4300] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
+                        className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg border border-[#d9c27e] bg-[#fdf6e2] hover:bg-[#faeec9] text-[#5c4300] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
                       >
                         <FlaskConical className="w-3.5 h-3.5" />
                         <span>Simular {columnTitle}</span>
