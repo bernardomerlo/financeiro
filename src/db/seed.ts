@@ -22,7 +22,6 @@ async function seed() {
     { key: "daily_spending_target", value: "50.00" },
     { key: "credit_card_closing_day", value: "20" },
     { key: "credit_card_due_day", value: "27" },
-    { key: "reference_today", value: "2026-11-24" },
   ];
 
   for (const s of defaultSettings) {

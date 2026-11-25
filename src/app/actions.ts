@@ -19,6 +19,7 @@ import {
 } from "@/db/schema";
 import {
   calculateCreditCardInstallmentDates,
+  getTodayIsoDate,
   type CashflowSettings,
   type TransactionRecord,
   type DailyOverrideRecord,
@@ -54,7 +55,7 @@ export async function fetchInitialCashflowData(): Promise<{
     dailySpendingTarget: Number(settingsMap.get("daily_spending_target") ?? "50.00"),
     creditCardClosingDay: Number(settingsMap.get("credit_card_closing_day") ?? "20"),
     creditCardDueDay: Number(settingsMap.get("credit_card_due_day") ?? "27"),
-    referenceToday: settingsMap.get("reference_today") ?? "2026-11-24",
+    referenceToday: getTodayIsoDate(new Date(), process.env.APP_TIMEZONE || undefined),
   };
 
   return {
@@ -253,8 +254,6 @@ export async function updateSettingsAction(newSettings: Partial<CashflowSettings
     entries.push(["credit_card_closing_day", String(newSettings.creditCardClosingDay)]);
   if (newSettings.creditCardDueDay !== undefined)
     entries.push(["credit_card_due_day", String(newSettings.creditCardDueDay)]);
-  if (newSettings.referenceToday !== undefined)
-    entries.push(["reference_today", newSettings.referenceToday]);
 
   for (const [k, v] of entries) {
     await client.execute({

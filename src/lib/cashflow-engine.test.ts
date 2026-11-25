@@ -3,6 +3,8 @@ import {
   calculateCashflowProjection,
   calculateCreditCardInstallmentDates,
   classifyLiquidity,
+  getLocalTodayIsoDate,
+  getTodayIsoDate,
   type CashflowSettings,
 } from "./cashflow-engine";
 import {
@@ -96,5 +98,36 @@ describe("CashFlow Engine", () => {
     // Expired at/after 20h
     expect(verifySessionToken(token, now + TWENTY_HOURS_MS)).toBe(false);
     expect(verifySessionToken(token, now + TWENTY_HOURS_MS + 60_000)).toBe(false);
+  });
+
+  it("computes dynamic current date respecting America/Sao_Paulo timezone", () => {
+    // 2026-11-26 01:30 UTC is still 2026-11-25 22:30 in America/Sao_Paulo (UTC-3)
+    const lateNightBr = new Date("2026-11-26T01:30:00Z");
+    expect(getTodayIsoDate(lateNightBr, "America/Sao_Paulo")).toBe("2026-11-25");
+
+    // 2026-11-26 03:00 UTC is 2026-11-26 00:00 in America/Sao_Paulo (UTC-3)
+    const midnightBr = new Date("2026-11-26T03:00:00Z");
+    expect(getTodayIsoDate(midnightBr, "America/Sao_Paulo")).toBe("2026-11-26");
+
+    // Local helper formats YYYY-MM-DD cleanly
+    const localDate = new Date(2026, 10, 5, 12, 0, 0);
+    expect(getLocalTodayIsoDate(localDate)).toBe("2026-11-05");
+  });
+
+  it("dynamically shifts todayRow and past/today/future flags when referenceToday advances", () => {
+    const day25 = calculateCashflowProjection({
+      settings: { ...baseSettings, referenceToday: "2026-11-25" },
+      visibleYearMonths: ["2026-10", "2026-11", "2026-12"],
+      transactions: [],
+      dailyOverrides: [],
+      recurringRules: [],
+      recurringOccurrences: [],
+      includeSimulations: true,
+    });
+
+    expect(day25.todayRow?.date).toBe("2026-11-25");
+    expect(day25.allDaysMap["2026-11-24"].isPast).toBe(true);
+    expect(day25.allDaysMap["2026-11-25"].isToday).toBe(true);
+    expect(day25.allDaysMap["2026-11-26"].isFuture).toBe(true);
   });
 });

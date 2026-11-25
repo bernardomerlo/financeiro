@@ -19,7 +19,7 @@ import {
   deleteRecurringRuleAction,
   fetchInitialCashflowData,
 } from "@/app/actions";
-import { CATEGORIES, formatBRL } from "@/lib/format";
+import { CATEGORIES, formatBRL, formatFullDate } from "@/lib/format";
 
 export function SettingsAndRecurringModals() {
   const {
@@ -37,7 +37,6 @@ export function SettingsAndRecurringModals() {
   const [dailyTarget, setDailyTarget] = useState(String(settings.dailySpendingTarget));
   const [closingDay, setClosingDay] = useState(String(settings.creditCardClosingDay));
   const [dueDay, setDueDay] = useState(String(settings.creditCardDueDay));
-  const [referenceToday, setReferenceToday] = useState(settings.referenceToday);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   const [recTitle, setRecTitle] = useState("");
@@ -53,7 +52,6 @@ export function SettingsAndRecurringModals() {
     setDailyTarget(String(settings.dailySpendingTarget));
     setClosingDay(String(settings.creditCardClosingDay));
     setDueDay(String(settings.creditCardDueDay));
-    setReferenceToday(settings.referenceToday);
   }, [settings, isSettingsModalOpen]);
 
   async function handleSaveSettings(e: React.FormEvent) {
@@ -66,7 +64,6 @@ export function SettingsAndRecurringModals() {
         dailySpendingTarget: parseFloat(dailyTarget.replace(",", ".")) || 50,
         creditCardClosingDay: Math.min(31, Math.max(1, parseInt(closingDay) || 20)),
         creditCardDueDay: Math.min(31, Math.max(1, parseInt(dueDay) || 27)),
-        referenceToday,
       });
       const fresh = await fetchInitialCashflowData();
       hydrateFromServer(fresh);
@@ -209,15 +206,14 @@ export function SettingsAndRecurringModals() {
                   </div>
                   <div>
                     <label className="block font-semibold text-[#526657] mb-1">
-                      Data Atual (Hoje)
+                      Dia Atual (Automático)
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={referenceToday}
-                      onChange={(e) => setReferenceToday(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-lg border border-[#c5d1c8]"
-                    />
+                    <div className="w-full h-9 px-2.5 rounded-lg border border-[#d5ded8] bg-[#eff3f0] flex items-center justify-between text-[#141f17] font-semibold">
+                      <span>{formatFullDate(settings.referenceToday)}</span>
+                      <span className="text-[10px] font-bold text-[#2d6a3e] bg-[#e8f5e9] border border-[#a5d6a7] px-1.5 py-0.5 rounded">
+                        Dinâmico
+                      </span>
+                    </div>
                   </div>
                 </div>
 

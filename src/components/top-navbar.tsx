@@ -19,8 +19,13 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCashflowStore } from "@/store/use-cashflow-store";
-import { addMonthsToYearMonth, classifyLiquidity, formatMonthTitle } from "@/lib/cashflow-engine";
-import { formatBRL } from "@/lib/format";
+import {
+  addMonthsToYearMonth,
+  classifyLiquidity,
+  formatMonthTitle,
+  getLocalTodayIsoDate,
+} from "@/lib/cashflow-engine";
+import { formatBRL, formatFullDate } from "@/lib/format";
 import { AUTH_CACHE_KEY } from "@/lib/auth";
 import { logoutAction } from "@/app/actions";
 import { KeyboardShortcutsAndPalette } from "./keyboard-shortcuts-and-palette";
@@ -82,6 +87,7 @@ export function TopNavbar({
     centerYearMonth,
     navigateMonths,
     resetToCurrentQuarter,
+    syncCurrentDate,
     openLaunchModal,
     setSettingsModalOpen,
     setRecurringModalOpen,
@@ -89,6 +95,50 @@ export function TopNavbar({
     stagedTransactions,
     stagedOverrides,
   } = useCashflowStore();
+
+  React.useEffect(() => {
+    const syncToday = () => {
+      syncCurrentDate(getLocalTodayIsoDate());
+    };
+
+    syncToday();
+
+    let midnightTimer: number;
+    const scheduleMidnightSync = () => {
+      const now = new Date();
+      const nextMidnight = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        0,
+        0,
+        1
+      );
+      const msUntilMidnight = Math.max(1_000, nextMidnight.getTime() - now.getTime());
+      midnightTimer = window.setTimeout(() => {
+        syncToday();
+        scheduleMidnightSync();
+      }, msUntilMidnight);
+    };
+
+    scheduleMidnightSync();
+    const interval = window.setInterval(syncToday, 60_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        syncToday();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", syncToday);
+
+    return () => {
+      window.clearTimeout(midnightTimer);
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", syncToday);
+    };
+  }, [syncCurrentDate]);
 
   const prevYM = addMonthsToYearMonth(centerYearMonth, -1);
   const nextYM = addMonthsToYearMonth(centerYearMonth, 1);
@@ -168,7 +218,10 @@ export function TopNavbar({
 
         {/* Center: Live Balances with Untitled UI status rings */}
         <div className="hidden lg:flex items-center gap-2 text-xs tabular-nums">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eff3f0] border border-[#d5ded8]">
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eff3f0] border border-[#d5ded8]"
+            title={`Dia atual: ${formatFullDate(settings.referenceToday)}`}
+          >
             <span
               className="w-2 h-2 rounded-full ring-3 ring-current/15"
               style={{ backgroundColor: todayLiquidity.hex, color: todayLiquidity.hex }}

@@ -4,6 +4,8 @@ import { create } from "zustand";
 import {
   addMonthsToYearMonth,
   calculateCreditCardInstallmentDates,
+  getLocalTodayIsoDate,
+  getTodayIsoDate,
   type CashflowSettings,
   type DailyOverrideRecord,
   type RecurringOccurrenceRecord,
@@ -47,6 +49,7 @@ interface CashflowState {
   }) => void;
   navigateMonths: (delta: number) => void;
   resetToCurrentQuarter: () => void;
+  syncCurrentDate: (todayIso: string) => void;
   toggleIncludeSimulations: () => void;
 
   // In-memory simulation mutations
@@ -92,6 +95,8 @@ interface CashflowState {
   closeAllModals: () => void;
 }
 
+const initialTodayIso = getTodayIsoDate();
+
 export const useCashflowStore = create<CashflowState>((set, get) => ({
   isHydrated: false,
   settings: {
@@ -100,9 +105,9 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
     dailySpendingTarget: 50.0,
     creditCardClosingDay: 20,
     creditCardDueDay: 27,
-    referenceToday: "2026-11-24",
+    referenceToday: initialTodayIso,
   },
-  centerYearMonth: "2026-11",
+  centerYearMonth: initialTodayIso.slice(0, 7),
   dbTransactions: [],
   dbDailyOverrides: [],
   recurringRules: [],
@@ -124,14 +129,26 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
   isCommandPaletteOpen: false,
 
   hydrateFromServer: (data) =>
-    set({
-      isHydrated: true,
-      settings: data.settings,
-      centerYearMonth: data.settings.referenceToday.slice(0, 7),
-      dbTransactions: data.transactions,
-      dbDailyOverrides: data.dailyOverrides,
-      recurringRules: data.recurringRules,
-      recurringOccurrences: data.recurringOccurrences,
+    set((state) => {
+      const dynamicToday =
+        typeof window !== "undefined"
+          ? getLocalTodayIsoDate()
+          : data.settings.referenceToday;
+
+      return {
+        isHydrated: true,
+        settings: {
+          ...data.settings,
+          referenceToday: dynamicToday,
+        },
+        centerYearMonth: state.isHydrated
+          ? state.centerYearMonth
+          : dynamicToday.slice(0, 7),
+        dbTransactions: data.transactions,
+        dbDailyOverrides: data.dailyOverrides,
+        recurringRules: data.recurringRules,
+        recurringOccurrences: data.recurringOccurrences,
+      };
     }),
 
   navigateMonths: (delta) =>
@@ -143,6 +160,25 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
     set((state) => ({
       centerYearMonth: state.settings.referenceToday.slice(0, 7),
     })),
+
+  syncCurrentDate: (todayIso) =>
+    set((state) => {
+      if (state.settings.referenceToday === todayIso) {
+        return state;
+      }
+      const prevTodayYM = state.settings.referenceToday.slice(0, 7);
+      const nextTodayYM = todayIso.slice(0, 7);
+      return {
+        settings: {
+          ...state.settings,
+          referenceToday: todayIso,
+        },
+        centerYearMonth:
+          state.centerYearMonth === prevTodayYM
+            ? nextTodayYM
+            : state.centerYearMonth,
+      };
+    }),
 
   toggleIncludeSimulations: () =>
     set((state) => ({
