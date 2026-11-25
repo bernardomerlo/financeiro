@@ -1,8 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { client, db, ensureSchema } from "@/db";
+import {
+  AUTH_COOKIE_NAME,
+  TWENTY_HOURS_SECONDS,
+  createSessionToken,
+  verifyPassword,
+} from "@/lib/auth";
 import {
   settings,
   transactions,
@@ -299,4 +306,31 @@ export async function setRecurringOccurrenceStatusAction(input: {
   });
   revalidatePath("/");
   revalidatePath("/insights");
+}
+
+export async function loginWithPasswordAction(password: string): Promise<{
+  ok: boolean;
+  expiresAt?: number;
+  error?: string;
+}> {
+  if (!verifyPassword(password)) {
+    return { ok: false, error: "Senha incorreta." };
+  }
+
+  const { token, expiresAt } = createSessionToken();
+  const cookieStore = await cookies();
+  cookieStore.set(AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: TWENTY_HOURS_SECONDS,
+    secure: process.env.NODE_ENV === "production",
+  });
+
+  return { ok: true, expiresAt };
+}
+
+export async function logoutAction() {
+  const cookieStore = await cookies();
+  cookieStore.delete(AUTH_COOKIE_NAME);
 }

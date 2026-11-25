@@ -15,10 +15,14 @@ import {
   SlidersHorizontal,
   Download,
   Command,
+  Lock,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCashflowStore } from "@/store/use-cashflow-store";
 import { addMonthsToYearMonth, classifyLiquidity, formatMonthTitle } from "@/lib/cashflow-engine";
 import { formatBRL } from "@/lib/format";
+import { AUTH_CACHE_KEY } from "@/lib/auth";
+import { logoutAction } from "@/app/actions";
 import { KeyboardShortcutsAndPalette } from "./keyboard-shortcuts-and-palette";
 
 interface TopNavbarProps {
@@ -37,6 +41,41 @@ export function TopNavbar({
   onExportCSV,
 }: TopNavbarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    const checkExpiry = () => {
+      try {
+        const raw = localStorage.getItem(AUTH_CACHE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { expiresAt?: number };
+          if (parsed.expiresAt && Date.now() >= parsed.expiresAt) {
+            localStorage.removeItem(AUTH_CACHE_KEY);
+            logoutAction().then(() => {
+              router.replace("/login");
+              router.refresh();
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    checkExpiry();
+    const interval = setInterval(checkExpiry, 60_000);
+    return () => clearInterval(interval);
+  }, [router]);
+
+  async function handleLock() {
+    try {
+      localStorage.removeItem(AUTH_CACHE_KEY);
+    } catch {
+      // ignore
+    }
+    await logoutAction();
+    router.replace("/login");
+    router.refresh();
+  }
 
   const {
     settings,
@@ -239,6 +278,16 @@ export function TopNavbar({
             <kbd className="hidden sm:inline-block px-1 py-0.2 text-[9px] rounded bg-white/15 text-white/90 border border-white/20">
               Ctrl N
             </kbd>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleLock}
+            className="h-7 w-7 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#526657] hover:text-[#141f17] flex items-center justify-center cursor-pointer"
+            title="Bloquear Sessão"
+            aria-label="Bloquear Sessão"
+          >
+            <Lock className="w-3.5 h-3.5" />
           </button>
         </div>
       </header>

@@ -5,6 +5,12 @@ import {
   classifyLiquidity,
   type CashflowSettings,
 } from "./cashflow-engine";
+import {
+  createSessionToken,
+  verifyPassword,
+  verifySessionToken,
+  TWENTY_HOURS_MS,
+} from "./auth";
 
 const baseSettings: CashflowSettings = {
   initialBalance: 6095.16,
@@ -73,5 +79,22 @@ describe("CashFlow Engine", () => {
     });
 
     expect(result.allDaysMap["2026-10-01"].projectedBalance).toBe(3105.51);
+  });
+
+  it("validates password Churrascanca1@ and enforces 20-hour session cache expiry", () => {
+    expect(verifyPassword("wrong")).toBe(false);
+    expect(verifyPassword("Churrascanca1@")).toBe(true);
+
+    const now = 1_700_000_000_000;
+    const { token, expiresAt } = createSessionToken(now);
+    expect(expiresAt - now).toBe(TWENTY_HOURS_MS);
+
+    // Valid before 20h
+    expect(verifySessionToken(token, now + 1000)).toBe(true);
+    expect(verifySessionToken(token, now + TWENTY_HOURS_MS - 1)).toBe(true);
+
+    // Expired at/after 20h
+    expect(verifySessionToken(token, now + TWENTY_HOURS_MS)).toBe(false);
+    expect(verifySessionToken(token, now + TWENTY_HOURS_MS + 60_000)).toBe(false);
   });
 });
