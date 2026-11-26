@@ -6,22 +6,20 @@ import {
   X,
   Trash2,
   Plus,
-  FlaskConical,
   Check,
   RotateCcw,
   Ban,
   CheckCircle,
-  CreditCard,
-  Banknote,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashflowStore } from "@/store/use-cashflow-store";
 import type { ComputedDayRow, DayLineItem } from "@/lib/cashflow-engine";
-import { CATEGORIES, formatBRL, formatFullDate } from "@/lib/format";
+import { formatBRL, formatFullDate } from "@/lib/format";
 import {
   createRealTransactionAction,
   deleteTransactionAction,
-  updateTransactionAmountAction,
+  updateTransactionAction,
   upsertDailyOverrideAction,
   removeDailyOverrideAction,
   setRecurringOccurrenceStatusAction,
@@ -36,36 +34,29 @@ interface DayDetailDrawerProps {
 export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
   const {
     selectedColumnForDetail,
-    setSelectedDayForDetail,
-    stageDailyOverride,
     stageDeleteTransaction,
-    addStagedSimulation,
     hydrateFromServer,
   } = useCashflowStore();
 
   const [dailyInput, setDailyInput] = useState("");
+  const [newType, setNewType] = useState<"expense_fixed" | "income">("expense_fixed");
   const [newAmountStr, setNewAmountStr] = useState("");
   const [newDesc, setNewDesc] = useState("");
-  const [newCategory, setNewCategory] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "credit_card">("cash");
-  const [installments, setInstallments] = useState(1);
+
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingItemAmount, setEditingItemAmount] = useState("");
+  const [editingItemDesc, setEditingItemDesc] = useState("");
   const [isBusy, setIsBusy] = useState(false);
-
-  const activeCol = selectedColumnForDetail;
 
   useEffect(() => {
     if (dayRow) {
       setDailyInput(String(dayRow.dailyAmount).replace(".", ","));
+      setNewType(selectedColumnForDetail === "income" ? "income" : "expense_fixed");
       setNewAmountStr("");
       setNewDesc("");
-      setNewCategory("");
-      setPaymentMethod("cash");
-      setInstallments(1);
       setEditingItemId(null);
     }
-  }, [dayRow, activeCol]);
+  }, [dayRow, selectedColumnForDetail]);
 
   const parsedDaily = (() => {
     const cleaned = dailyInput.replace(/[^\d,.-]/g, "").replace(",", ".");
@@ -79,24 +70,17 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
     return isNaN(val) || val < 0 ? 0 : val;
   })();
 
-  const columnTitle =
-    activeCol === "income"
-      ? "Entrada"
-      : activeCol === "expense_fixed"
-      ? "Saída"
-      : "Diário";
-
   async function handleSaveDailyToDb(currentDay: ComputedDayRow, amountToSave: number) {
     setIsBusy(true);
     try {
       await upsertDailyOverrideAction(currentDay.date, amountToSave);
       const fresh = await fetchInitialCashflowData();
       hydrateFromServer(fresh);
-      toast.success(`Diário: ${formatBRL(amountToSave)}`);
-      onClose();
+      setDailyInput(String(amountToSave).replace(".", ","));
+      toast.success(`Diário atualizado: ${formatBRL(amountToSave)}`);
     } catch (err) {
       console.error(err);
-      toast.error("Erro ao salvar.");
+      toast.error("Erro ao salvar diário.");
     } finally {
       setIsBusy(false);
     }
@@ -108,8 +92,8 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
       await removeDailyOverrideAction(currentDay.date);
       const fresh = await fetchInitialCashflowData();
       hydrateFromServer(fresh);
+      setDailyInput(String(currentDay.dailyTarget).replace(".", ","));
       toast.info("Meta padrão restaurada.");
-      onClose();
     } catch (err) {
       console.error(err);
       toast.error("Erro ao restaurar.");
@@ -118,34 +102,9 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
     }
   }
 
-  function handleSimulateDailyInMemory(currentDay: ComputedDayRow, amountToSim: number) {
-    stageDailyOverride(currentDay.date, amountToSim);
-    toast.success(`Diário simulado: ${formatBRL(amountToSim)}`);
-    onClose();
-  }
-
-  async function handleAddMovement(currentDay: ComputedDayRow, asSimulation: boolean) {
+  async function handleAddMovement(currentDay: ComputedDayRow) {
     if (parsedNewAmount <= 0) {
       toast.error("Informe um valor válido.");
-      return;
-    }
-
-    const effectiveMethod = activeCol === "income" ? "cash" : paymentMethod;
-    const effectiveInstallments = effectiveMethod === "credit_card" ? installments : 1;
-
-    if (asSimulation) {
-      addStagedSimulation({
-        date: currentDay.date,
-        type: activeCol,
-        amount: parsedNewAmount,
-        description: newDesc.trim() || undefined,
-        category: newCategory || undefined,
-        paymentMethod: effectiveMethod,
-        installments: effectiveInstallments,
-      });
-      toast.success(`${columnTitle} simulada.`);
-      setNewAmountStr("");
-      setNewDesc("");
       return;
     }
 
@@ -153,17 +112,20 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
     try {
       await createRealTransactionAction({
         date: currentDay.date,
-        type: activeCol,
+        type: newType,
         amount: parsedNewAmount,
         description: newDesc.trim() || undefined,
-        category: newCategory || undefined,
-        paymentMethod: effectiveMethod,
-        installments: effectiveInstallments,
+        paymentMethod: "cash",
+        installments: 1,
         isSimulation: false,
       });
       const fresh = await fetchInitialCashflowData();
       hydrateFromServer(fresh);
-      toast.success(`${columnTitle} adicionada.`);
+      toast.success(
+        `${newType === "income" ? "Entrada" : "Saída"} adicionada: ${formatBRL(
+          parsedNewAmount
+        )}`
+      );
       setNewAmountStr("");
       setNewDesc("");
     } catch (err) {
@@ -172,6 +134,15 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  function startEditingItem(item: DayLineItem) {
+    if (item.source !== "transaction") return;
+    setEditingItemId(item.id);
+    setEditingItemAmount(String(item.amount).replace(".", ","));
+    setEditingItemDesc(
+      item.title === "Saída" || item.title === "Entrada" ? "" : item.title
+    );
   }
 
   async function handleSaveEditedItem(item: DayLineItem) {
@@ -184,11 +155,15 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
 
     setIsBusy(true);
     try {
-      await updateTransactionAmountAction(item.id, val);
+      await updateTransactionAction({
+        id: item.id,
+        amount: val,
+        description: editingItemDesc.trim() || null,
+      });
       const fresh = await fetchInitialCashflowData();
       hydrateFromServer(fresh);
       setEditingItemId(null);
-      toast.success("Valor atualizado.");
+      toast.success("Transação atualizada.");
     } catch (err) {
       console.error(err);
       toast.error("Erro ao atualizar.");
@@ -208,7 +183,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
       await deleteTransactionAction(itemId);
       const fresh = await fetchInitialCashflowData();
       hydrateFromServer(fresh);
-      toast.success("Excluído.");
+      toast.success("Transação excluída.");
     } catch (err) {
       console.error(err);
       toast.error("Erro ao excluir.");
@@ -231,7 +206,7 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
       });
       const fresh = await fetchInitialCashflowData();
       hydrateFromServer(fresh);
-      toast.success(status === "skipped" ? "Ignorado." : "Confirmado.");
+      toast.success(status === "skipped" ? "Fixo ignorado." : "Fixo confirmado.");
     } catch (err) {
       console.error(err);
       toast.error("Erro.");
@@ -253,107 +228,67 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
             onClick={onClose}
           />
           <motion.div
-            initial={{ opacity: 0, y: 28 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 28 }}
-            transition={{ duration: 0.16, ease: "easeOut" }}
-            className="relative w-full lg:max-w-sm bg-white rounded-t-2xl lg:rounded-xl shadow-2xl border-t lg:border border-[#cfd8d2] overflow-hidden z-10 pb-safe"
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="relative w-full lg:max-w-md bg-white rounded-t-2xl lg:rounded-xl shadow-2xl border-t lg:border border-[#cfd8d2] overflow-hidden z-10 pb-safe"
             role="dialog"
             aria-modal="true"
-            aria-label={`${columnTitle} ${formatFullDate(dayRow.date)}`}
+            aria-label={`Dia ${formatFullDate(dayRow.date)}`}
           >
             {/* Mobile Sheet Handle */}
             <div className="flex lg:hidden justify-center pt-2 pb-1 bg-[#eff3f0]">
               <span className="w-10 h-1 rounded-full bg-[#b9c7bd]" />
             </div>
 
-            {/* Header with Date & Saldo */}
-            <div className="px-4 py-2.5 border-b border-[#d8e0da] flex items-center justify-between bg-[#eff3f0]">
+            {/* Header: Date & Day Balance */}
+            <div className="px-4 py-3 border-b border-[#d8e0da] flex items-center justify-between bg-[#eff3f0]">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-[#141f17]">
-                  {columnTitle} • {formatFullDate(dayRow.date)}
+                  Dia {formatFullDate(dayRow.date)}
                 </h3>
                 <span
                   className={`px-2 py-0.5 rounded text-xs font-bold ${dayRow.liquidity.bgClass}`}
                 >
-                  {formatBRL(dayRow.projectedBalance)}
+                  Saldo: {formatBRL(dayRow.projectedBalance)}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-white text-[#526657] border border-[#cfd8d2] rounded">
-                  Esc
-                </kbd>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="w-9 h-9 lg:w-auto lg:h-auto lg:p-1 rounded-lg lg:rounded hover:bg-white text-[#4e6153] flex items-center justify-center cursor-pointer"
-                  aria-label="Fechar"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-8 h-8 rounded-lg hover:bg-white text-[#4e6153] flex items-center justify-center cursor-pointer"
+                aria-label="Fechar"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Column Switcher Tabs with Framer Motion layoutId */}
-            <div className="px-4 pt-3">
-              <div className="grid grid-cols-3 gap-1 bg-[#eff3f0] p-1 rounded-lg border border-[#d5ded8]">
-                {(
-                  [
-                    { id: "income", label: "Entrada", color: "text-[#1b5e20]" },
-                    { id: "expense_fixed", label: "Saída", color: "text-[#9e1c1c]" },
-                    { id: "expense_daily", label: "Diário", color: "text-[#141f17]" },
-                  ] as const
-                ).map((tab) => {
-                  const active = activeCol === tab.id;
-                  return (
+            {/* Unified Single-View Body: 1. Diário + 2. All Transactions + 3. Quick Add */}
+            <div className="p-4 space-y-4 max-h-[80dvh] overflow-y-auto thin-scroll">
+              {/* 1. GASTO DIÁRIO DO DIA */}
+              <div className="p-3 rounded-xl bg-[#f8faf8] border border-[#d5ded8] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#141f17]">
+                    Gasto Diário (R$)
+                  </span>
+                  {dayRow.isDailyOverridden && (
                     <button
-                      key={tab.id}
                       type="button"
-                      onClick={() => setSelectedDayForDetail(dayRow.date, tab.id)}
-                      className={`relative min-h-[38px] lg:min-h-0 py-1.5 rounded text-xs font-semibold cursor-pointer z-10 ${
-                        active ? tab.color : "text-[#4e6153]"
-                      }`}
+                      disabled={isBusy}
+                      onClick={() => handleResetDailyToDefault(dayRow)}
+                      className="text-[11px] text-[#2d6a3e] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
                     >
-                      {active && (
-                        <motion.span
-                          layoutId="day-drawer-tab-pill"
-                          transition={{ type: "spring", stiffness: 450, damping: 34 }}
-                          className="absolute inset-0 bg-white rounded shadow-2xs -z-10"
-                        />
-                      )}
-                      {tab.label}
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Voltar meta ({formatBRL(dayRow.dailyTarget)})</span>
                     </button>
-                  );
-                })}
-              </div>
-            </div>
+                  )}
+                </div>
 
-            {/* Body specific to the clicked column */}
-            <div className="p-4 space-y-3.5 max-h-[78dvh] lg:max-h-[75dvh] overflow-y-auto thin-scroll">
-              {activeCol === "expense_daily" ? (
-                /* DIÁRIO VIEW */
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#141f17]">
-                      Valor Diário (R$)
-                    </label>
-                    {dayRow.isDailyOverridden && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleResetDailyToDefault(dayRow)}
-                        className="text-[11px] text-[#2d6a3e] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        <span>Padrão ({formatBRL(dayRow.dailyTarget)})</span>
-                      </button>
-                    )}
-                  </div>
-
+                <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     inputMode="decimal"
-                    autoFocus
                     value={dailyInput}
                     onChange={(e) => setDailyInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -362,303 +297,283 @@ export function DayDetailDrawer({ dayRow, onClose }: DayDetailDrawerProps) {
                         handleSaveDailyToDb(dayRow, parsedDaily);
                       }
                     }}
-                    className="w-full h-10 px-3 rounded-lg border border-[#c5d1c8] text-right text-base font-bold text-[#141f17] focus:outline-none focus:ring-2 focus:ring-[#2d6a3e]"
+                    className="flex-1 h-10 px-3 rounded-lg border border-[#c5d1c8] bg-white text-right text-base font-bold text-[#141f17] focus:outline-none focus:ring-2 focus:ring-[#2d6a3e]"
                   />
-
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleSaveDailyToDb(dayRow, parsedDaily)}
-                      className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Salvar</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleSaveDailyToDb(dayRow, 0)}
-                      className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg border border-[#e06666] bg-[#ffebee] hover:bg-[#ffcdd2] text-[#8e1414] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Zerar</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSimulateDailyInMemory(dayRow, parsedDaily)}
-                      className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg border border-[#d9c27e] bg-[#fdf6e2] hover:bg-[#faeec9] text-[#5c4300] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <FlaskConical className="w-3.5 h-3.5" />
-                      <span>Simular</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => handleSaveDailyToDb(dayRow, parsedDaily)}
+                    className="h-10 px-3.5 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Salvar</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => handleSaveDailyToDb(dayRow, 0)}
+                    className="h-10 px-3 rounded-lg border border-[#ef9a9a] bg-[#ffebee] hover:bg-[#ffcdd2] text-[#9e1c1c] text-xs font-bold cursor-pointer shrink-0"
+                  >
+                    Zerar
+                  </button>
                 </div>
-              ) : (
-                /* ENTRADA OR SAÍDA VIEW */
-                <div className="space-y-3.5">
-                  {dayRow.items.filter((item) => item.type === activeCol).length > 0 && (
-                    <div className="space-y-1.5">
-                      {dayRow.items
-                        .filter((item) => item.type === activeCol)
-                        .map((item) => (
-                          <div
-                            key={item.id}
-                            className={`p-2.5 rounded-lg border flex items-center justify-between gap-2 ${
-                              item.source === "simulation"
-                                ? "bg-[#fdf6e2] border-[#d9c27e]"
-                                : "bg-[#f8faf8] border-[#d5ded8]"
-                            }`}
-                          >
-                            {editingItemId === item.id ? (
-                              <div className="flex items-center gap-1.5 w-full">
+              </div>
+
+              {/* 2. TODAS AS TRANSAÇÕES DO DIA (SAÍDAS E ENTRADAS) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#141f17]">
+                    Transações do Dia ({dayRow.items.length})
+                  </span>
+                </div>
+
+                {dayRow.items.length === 0 ? (
+                  <div className="p-3 rounded-xl border border-dashed border-[#cfd8d2] text-center text-xs text-[#526657]">
+                    Nenhuma Saída ou Entrada neste dia.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {dayRow.items.map((item) => {
+                      const isIncome = item.type === "income";
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-2.5 rounded-xl border ${
+                            item.source === "simulation"
+                              ? "bg-[#fdf6e2] border-[#d9c27e]"
+                              : "bg-white border-[#cfd8d2]"
+                          }`}
+                        >
+                          {editingItemId === item.id ? (
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 gap-1.5">
                                 <input
                                   type="text"
                                   inputMode="decimal"
                                   autoFocus
                                   value={editingItemAmount}
-                                  onChange={(e) => setEditingItemAmount(e.target.value)}
+                                  onChange={(e) =>
+                                    setEditingItemAmount(e.target.value)
+                                  }
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") {
                                       e.preventDefault();
                                       handleSaveEditedItem(item);
                                     }
                                   }}
-                                  className="flex-1 h-10 lg:h-8 px-2 rounded border border-[#2d6a3e] bg-white text-right text-base lg:text-xs font-bold"
+                                  placeholder="Valor (R$)"
+                                  className="h-9 px-2.5 rounded-lg border border-[#2d6a3e] bg-white text-right text-sm font-bold"
                                 />
+                                <input
+                                  type="text"
+                                  value={editingItemDesc}
+                                  onChange={(e) =>
+                                    setEditingItemDesc(e.target.value)
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      handleSaveEditedItem(item);
+                                    }
+                                  }}
+                                  placeholder="Descrição"
+                                  className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-white text-xs"
+                                />
+                              </div>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingItemId(null)}
+                                  className="h-8 px-3 rounded-lg border border-[#cfd8d2] text-xs font-semibold text-[#4e6153] cursor-pointer"
+                                >
+                                  Cancelar
+                                </button>
                                 <button
                                   type="button"
                                   disabled={isBusy}
                                   onClick={() => handleSaveEditedItem(item)}
-                                  className="h-10 lg:h-8 px-3 lg:px-2.5 rounded bg-[#2d6a3e] text-white text-xs font-semibold cursor-pointer"
+                                  className="h-8 px-3.5 rounded-lg bg-[#2d6a3e] text-white text-xs font-bold cursor-pointer"
                                 >
-                                  OK
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingItemId(null)}
-                                  className="h-10 lg:h-8 px-2.5 lg:px-2 rounded border border-[#cfd8d2] text-xs cursor-pointer"
-                                >
-                                  X
+                                  Salvar
                                 </button>
                               </div>
-                            ) : (
-                              <>
-                                <div
-                                  onClick={() => {
-                                    if (item.source === "transaction") {
-                                      setEditingItemId(item.id);
-                                      setEditingItemAmount(
-                                        String(item.amount).replace(".", ",")
-                                      );
-                                    }
-                                  }}
-                                  className="min-w-0 flex-1 cursor-pointer"
-                                >
-                                  <div className="text-xs font-semibold text-[#141f17] truncate">
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${
+                                      isIncome
+                                        ? "bg-[#e8f5e9] text-[#1b5e20]"
+                                        : "bg-[#ffebee] text-[#9e1c1c]"
+                                    }`}
+                                  >
+                                    {isIncome ? "Entrada" : "Saída"}
+                                  </span>
+                                  <span className="text-xs font-semibold text-[#141f17] truncate">
                                     {item.title}
                                     {item.installmentLabel
                                       ? ` (${item.installmentLabel})`
                                       : ""}
-                                  </div>
-                                  {item.category && (
-                                    <div className="text-[11px] text-[#526657]">
-                                      {item.category}
-                                    </div>
-                                  )}
+                                  </span>
                                 </div>
+                              </div>
 
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (item.source === "transaction") {
-                                        setEditingItemId(item.id);
-                                        setEditingItemAmount(
-                                          String(item.amount).replace(".", ",")
-                                        );
-                                      }
-                                    }}
-                                    className={`text-xs font-bold cursor-pointer hover:underline ${
-                                      item.type === "income"
-                                        ? "text-[#1b5e20]"
-                                        : "text-[#9e1c1c]"
-                                    }`}
-                                  >
-                                    {formatBRL(item.amount)}
-                                  </button>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span
+                                  className={`text-xs font-bold tabular-nums mr-1 ${
+                                    isIncome
+                                      ? "text-[#1b5e20]"
+                                      : "text-[#9e1c1c]"
+                                  }`}
+                                >
+                                  {isIncome ? "+" : "-"} {formatBRL(item.amount)}
+                                </span>
 
-                                  {item.source === "recurring" &&
-                                  item.recurringRuleId &&
-                                  item.yearMonth ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        disabled={isBusy}
-                                        onClick={() =>
-                                          handleToggleRecurringStatus(
-                                            item.recurringRuleId!,
-                                            item.yearMonth!,
-                                            "confirmed"
-                                          )
-                                        }
-                                        className="p-1 rounded hover:bg-[#e8f5e9] text-[#1b5e20] cursor-pointer"
-                                      >
-                                        <CheckCircle className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={isBusy}
-                                        onClick={() =>
-                                          handleToggleRecurringStatus(
-                                            item.recurringRuleId!,
-                                            item.yearMonth!,
-                                            "skipped"
-                                          )
-                                        }
-                                        className="p-1 rounded hover:bg-[#ffebee] text-[#9e1c1c] cursor-pointer"
-                                      >
-                                        <Ban className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  ) : (
+                                {item.source === "recurring" &&
+                                item.recurringRuleId &&
+                                item.yearMonth ? (
+                                  <>
                                     <button
                                       type="button"
                                       disabled={isBusy}
                                       onClick={() =>
-                                        handleDeleteItem(item.id, item.isInMemory)
+                                        handleToggleRecurringStatus(
+                                          item.recurringRuleId!,
+                                          item.yearMonth!,
+                                          "confirmed"
+                                        )
                                       }
-                                      className="p-1 rounded hover:bg-[#ffebee] text-[#9e1c1c] cursor-pointer"
+                                      className="h-8 px-2 rounded-lg border border-[#a5d6a7] bg-[#e8f5e9] text-[#1b5e20] text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                      title="Confirmar fixo"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <CheckCircle className="w-3.5 h-3.5" />
                                     </button>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  )}
-
-                  {/* Quick Add Form for this specific column */}
-                  <div className="space-y-2.5 pt-1">
-                    <div>
-                      <label className="block text-xs font-bold text-[#141f17] mb-1">
-                        Novo Valor de {columnTitle} (R$)
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        autoFocus
-                        placeholder="0,00"
-                        value={newAmountStr}
-                        onChange={(e) => setNewAmountStr(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddMovement(dayRow, false);
-                          }
-                        }}
-                        className="w-full h-10 px-3 rounded-lg border border-[#c5d1c8] text-right text-base font-bold text-[#141f17] focus:outline-none focus:ring-2 focus:ring-[#2d6a3e]"
-                      />
-                    </div>
-
-                    {activeCol === "expense_fixed" && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="grid grid-cols-2 gap-1 bg-[#eff3f0] p-0.5 rounded-md border border-[#d5ded8]">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPaymentMethod("cash");
-                              setInstallments(1);
-                            }}
-                            className={`py-1 px-1.5 rounded text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer ${
-                              paymentMethod === "cash"
-                                ? "bg-[#2d6a3e] text-white"
-                                : "text-[#4e6153]"
-                            }`}
-                          >
-                            <Banknote className="w-3 h-3" />
-                            <span>À Vista</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPaymentMethod("credit_card")}
-                            className={`py-1 px-1.5 rounded text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer ${
-                              paymentMethod === "credit_card"
-                                ? "bg-[#2d6a3e] text-white"
-                                : "text-[#4e6153]"
-                            }`}
-                          >
-                            <CreditCard className="w-3 h-3" />
-                            <span>Cartão</span>
-                          </button>
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() =>
+                                        handleToggleRecurringStatus(
+                                          item.recurringRuleId!,
+                                          item.yearMonth!,
+                                          "skipped"
+                                        )
+                                      }
+                                      className="h-8 px-2 rounded-lg border border-[#ef9a9a] bg-[#ffebee] text-[#9e1c1c] text-xs font-bold flex items-center gap-1 cursor-pointer"
+                                      title="Ignorar neste mês"
+                                    >
+                                      <Ban className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() => startEditingItem(item)}
+                                      className="h-8 px-2.5 rounded-lg border border-[#cfd8d2] bg-[#f8faf8] hover:bg-[#eff3f0] text-[#141f17] text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                      <span>Editar</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() =>
+                                        handleDeleteItem(
+                                          item.id,
+                                          item.isInMemory
+                                        )
+                                      }
+                                      className="h-8 px-2.5 rounded-lg border border-[#ef9a9a] bg-[#ffebee] hover:bg-[#ffcdd2] text-[#9e1c1c] text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>Excluir</span>
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-                        <select
-                          disabled={paymentMethod !== "credit_card"}
-                          value={installments}
-                          onChange={(e) => setInstallments(Number(e.target.value))}
-                          className="h-10 lg:h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-base lg:text-xs font-semibold disabled:opacity-50"
-                        >
-                          {Array.from({ length: 18 }, (_, i) => i + 1).map((n) => (
-                            <option key={n} value={n}>
-                              {n}x
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        placeholder="Descrição (opcional)"
-                        value={newDesc}
-                        onChange={(e) => setNewDesc(e.target.value)}
-                        className="h-10 lg:h-8 px-2.5 rounded-md border border-[#c5d1c8] text-base lg:text-xs"
-                      />
-                      <select
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        className="h-10 lg:h-8 px-2 rounded-md border border-[#c5d1c8] bg-white text-base lg:text-xs"
-                      >
-                        <option value="">Categoria (opcional)</option>
-                        {CATEGORIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleAddMovement(dayRow, false)}
-                        className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Salvar {columnTitle}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleAddMovement(dayRow, true)}
-                        className="min-h-[44px] lg:min-h-0 lg:h-9 rounded-lg border border-[#d9c27e] bg-[#fdf6e2] hover:bg-[#faeec9] text-[#5c4300] text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <FlaskConical className="w-3.5 h-3.5" />
-                        <span>Simular {columnTitle}</span>
-                      </button>
-                    </div>
+              {/* 3. ADICIONAR NOVA SAÍDA OU ENTRADA NESTE DIA */}
+              <div className="pt-3 border-t border-[#e4ebe6] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#141f17]">
+                    Adicionar neste dia
+                  </span>
+                  <div className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
+                    <button
+                      type="button"
+                      onClick={() => setNewType("expense_fixed")}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer ${
+                        newType === "expense_fixed"
+                          ? "bg-white text-[#9e1c1c] shadow-2xs"
+                          : "text-[#4e6153]"
+                      }`}
+                    >
+                      Saída
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewType("income")}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer ${
+                        newType === "income"
+                          ? "bg-white text-[#1b5e20] shadow-2xs"
+                          : "text-[#4e6153]"
+                      }`}
+                    >
+                      Entrada
+                    </button>
                   </div>
                 </div>
-              )}
+
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Valor (R$)"
+                    value={newAmountStr}
+                    onChange={(e) => setNewAmountStr(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddMovement(dayRow);
+                      }
+                    }}
+                    className="w-28 h-10 px-2.5 rounded-lg border border-[#c5d1c8] text-right text-sm font-bold text-[#141f17]"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Descrição (opcional)"
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddMovement(dayRow);
+                      }
+                    }}
+                    className="flex-1 h-10 px-2.5 rounded-lg border border-[#c5d1c8] text-xs text-[#141f17]"
+                  />
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => handleAddMovement(dayRow)}
+                    className="h-10 px-3.5 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Lançar</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </motion.div>
         </div>

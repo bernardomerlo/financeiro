@@ -83,4 +83,36 @@ export async function ensureSchema() {
     ],
     "write"
   );
+
+  // Migrate any legacy daily_overrides rows into individual expense_daily transactions (RN-03, RN-04, RN-06)
+  const legacyOverrides = await client.execute(
+    `SELECT date, amount, note, is_reconciled FROM daily_overrides`
+  );
+  if (legacyOverrides.rows.length > 0) {
+    const now = new Date().toISOString();
+    for (const row of legacyOverrides.rows) {
+      const date = String(row.date);
+      const amount = Number(row.amount ?? 0);
+      const note = row.note ? String(row.note) : "Diário (Planilha)";
+      const isReconciled = Number(row.is_reconciled ?? 1);
+      if (amount > 0) {
+        await client.execute({
+          sql: `INSERT OR IGNORE INTO transactions (
+            id, date, type, amount, description, category, payment_method, purchase_date,
+            is_simulation, is_reconciled, created_at
+          ) VALUES (?, ?, 'expense_daily', ?, ?, NULL, 'cash', ?, 0, ?, ?)`,
+          args: [
+            `tx_daily_${date}`,
+            date,
+            amount,
+            note,
+            date,
+            isReconciled,
+            now,
+          ],
+        });
+      }
+    }
+    await client.execute(`DELETE FROM daily_overrides`);
+  }
 }

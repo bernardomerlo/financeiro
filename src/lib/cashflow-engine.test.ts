@@ -130,4 +130,46 @@ describe("CashFlow Engine", () => {
     expect(day25.allDaysMap["2026-11-25"].isToday).toBe(true);
     expect(day25.allDaysMap["2026-11-26"].isFuture).toBe(true);
   });
+
+  it("sums individual expense_daily transactions per day and projects dailySpendingTarget on empty future days (RN-04, RN-06)", () => {
+    const result = calculateCashflowProjection({
+      settings: { ...baseSettings, referenceToday: "2026-11-25" },
+      visibleYearMonths: ["2026-10", "2026-11", "2026-12"],
+      transactions: [
+        {
+          id: "d1",
+          date: "2026-11-25",
+          type: "expense_daily",
+          amount: 5,
+          description: "pao de queijo",
+          category: "Alimentação",
+          paymentMethod: "cash",
+          isSimulation: false,
+          isReconciled: true,
+        },
+        {
+          id: "d2",
+          date: "2026-11-25",
+          type: "expense_daily",
+          amount: 25,
+          description: "biscoito (sefaz)",
+          category: "Alimentação",
+          paymentMethod: "cash",
+          isSimulation: false,
+          isReconciled: true,
+        },
+      ],
+      dailyOverrides: [],
+      recurringRules: [],
+      recurringOccurrences: [],
+      includeSimulations: true,
+    });
+
+    // Today with 2 daily transactions (5 + 25 = 30), must NOT add the 50 target on top
+    expect(result.allDaysMap["2026-11-25"].dailyAmount).toBe(30);
+    // Past day without transactions has 0 dailyAmount
+    expect(result.allDaysMap["2026-11-24"].dailyAmount).toBe(0);
+    // Future day without transactions projects the 50.00 dailySpendingTarget
+    expect(result.allDaysMap["2026-12-01"].dailyAmount).toBe(50);
+  });
 });

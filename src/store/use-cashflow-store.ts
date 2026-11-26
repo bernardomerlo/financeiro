@@ -62,6 +62,16 @@ interface CashflowState {
     paymentMethod: "cash" | "credit_card";
     installments: number;
   }) => void;
+  updateStagedSimulation: (
+    id: string,
+    patch: {
+      type: "income" | "expense_fixed" | "expense_daily";
+      amount: number;
+      description?: string | null;
+      category?: string | null;
+      paymentMethod?: "cash" | "credit_card";
+    }
+  ) => void;
   stageDailyOverride: (date: string, amount: number, note?: string) => void;
   stageDeleteTransaction: (id: string) => void;
   removeStagedSimulation: (id: string) => void;
@@ -225,6 +235,25 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
     }));
   },
 
+  updateStagedSimulation: (id, patch) =>
+    set((state) => ({
+      stagedTransactions: state.stagedTransactions.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              type: patch.type,
+              amount: patch.amount,
+              description: patch.description ?? null,
+              category: patch.category ?? null,
+              paymentMethod:
+                patch.type === "expense_fixed"
+                  ? patch.paymentMethod ?? t.paymentMethod
+                  : "cash",
+            }
+          : t
+      ),
+    })),
+
   stageDailyOverride: (date, amount, note) =>
     set((state) => {
       const filtered = state.stagedOverrides.filter((o) => o.date !== date);
@@ -358,8 +387,12 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
 
   setSelectedDayForDetail: (date, column) =>
     set((state) => ({
-      selectedDayForDetail: date,
+      selectedDayForDetail: null,
       selectedColumnForDetail: column ?? state.selectedColumnForDetail,
+      isLaunchModalOpen: Boolean(date),
+      launchModalPresetDate: date || state.settings.referenceToday,
+      launchModalPresetSimulation: false,
+      launchModalPresetType: column ?? "expense_daily",
     })),
 
   setSettingsModalOpen: (open) =>

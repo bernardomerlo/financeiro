@@ -3,22 +3,15 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
-  Plus,
-  FlaskConical,
   BarChart3,
   Table2,
   CalendarClock,
   SlidersHorizontal,
-  Download,
-  Command,
-  Lock,
   Bell,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCashflowStore } from "@/store/use-cashflow-store";
 import {
   addMonthsToYearMonth,
@@ -27,9 +20,7 @@ import {
   getLocalTodayIsoDate,
 } from "@/lib/cashflow-engine";
 import { formatBRL, formatFullDate, formatShortDate } from "@/lib/format";
-import { AUTH_CACHE_KEY } from "@/lib/auth";
-import { logoutAction } from "@/app/actions";
-import { KeyboardShortcutsAndPalette } from "./keyboard-shortcuts-and-palette";
+import { fetchMobileNotificationsAction } from "@/app/actions";
 
 interface TopNavbarProps {
   currentBalance: number;
@@ -44,44 +35,8 @@ export function TopNavbar({
   projectedEndOfMonth,
   projectedQuarterEnd,
   simulationImpact = 0,
-  onExportCSV,
 }: TopNavbarProps) {
   const pathname = usePathname();
-  const router = useRouter();
-
-  React.useEffect(() => {
-    const checkExpiry = () => {
-      try {
-        const raw = localStorage.getItem(AUTH_CACHE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as { expiresAt?: number };
-          if (parsed.expiresAt && Date.now() >= parsed.expiresAt) {
-            localStorage.removeItem(AUTH_CACHE_KEY);
-            logoutAction().then(() => {
-              router.replace("/login");
-              router.refresh();
-            });
-          }
-        }
-      } catch {
-        // ignore
-      }
-    };
-    checkExpiry();
-    const interval = setInterval(checkExpiry, 60_000);
-    return () => clearInterval(interval);
-  }, [router]);
-
-  async function handleLock() {
-    try {
-      localStorage.removeItem(AUTH_CACHE_KEY);
-    } catch {
-      // ignore
-    }
-    await logoutAction();
-    router.replace("/login");
-    router.refresh();
-  }
 
   const {
     settings,
@@ -89,56 +44,17 @@ export function TopNavbar({
     navigateMonths,
     resetToCurrentQuarter,
     syncCurrentDate,
-    openLaunchModal,
     setSettingsModalOpen,
     setRecurringModalOpen,
-    setCommandPaletteOpen,
-    stagedTransactions,
-    stagedOverrides,
   } = useCashflowStore();
 
   React.useEffect(() => {
     const syncToday = () => {
       syncCurrentDate(getLocalTodayIsoDate());
     };
-
     syncToday();
-
-    let midnightTimer: number;
-    const scheduleMidnightSync = () => {
-      const now = new Date();
-      const nextMidnight = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() + 1,
-        0,
-        0,
-        1
-      );
-      const msUntilMidnight = Math.max(1_000, nextMidnight.getTime() - now.getTime());
-      midnightTimer = window.setTimeout(() => {
-        syncToday();
-        scheduleMidnightSync();
-      }, msUntilMidnight);
-    };
-
-    scheduleMidnightSync();
     const interval = window.setInterval(syncToday, 60_000);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        syncToday();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", syncToday);
-
-    return () => {
-      window.clearTimeout(midnightTimer);
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", syncToday);
-    };
+    return () => window.clearInterval(interval);
   }, [syncCurrentDate]);
 
   const prevYM = addMonthsToYearMonth(centerYearMonth, -1);
@@ -153,20 +69,43 @@ export function TopNavbar({
 
   const todayLiquidity = classifyLiquidity(currentBalance);
   const endLiquidity = classifyLiquidity(projectedEndOfMonth);
-  const pendingCount = stagedTransactions.length + stagedOverrides.length;
+  const [pendingNotifCount, setPendingNotifCount] = React.useState(0);
+
+  React.useEffect(() => {
+    let active = true;
+    const checkPendingNotifs = () => {
+      fetchMobileNotificationsAction()
+        .then((list) => {
+          if (active) {
+            setPendingNotifCount(
+              list.filter((n) => n.status === "pending").length
+            );
+          }
+        })
+        .catch(() => {
+          // ignore
+        });
+    };
+    checkPendingNotifs();
+    const timer = window.setInterval(checkPendingNotifs, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [pathname]);
 
   return (
     <>
-      <KeyboardShortcutsAndPalette />
-
-      {/* MOBILE HEADER: Compact & clean, optimized for quick entry */}
+      {/* MOBILE HEADER: Minimalist */}
       <header className="flex lg:hidden h-12 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30 sticky top-0">
         <Link href="/" className="flex items-center gap-2 min-w-0">
           <span className="w-7 h-7 rounded-lg bg-[#2d6a3e] text-white flex items-center justify-center shrink-0">
             <Table2 className="w-3.5 h-3.5" />
           </span>
           <div className="min-w-0 leading-tight">
-            <div className="text-sm font-bold text-[#141f17] truncate">CashFlow</div>
+            <div className="text-sm font-bold text-[#141f17] truncate">
+              CashFlow
+            </div>
             <div className="text-[11px] font-medium text-[#526657]">
               Hoje • {formatShortDate(settings.referenceToday)}
             </div>
@@ -181,30 +120,25 @@ export function TopNavbar({
                 ? "border-[#2d6a3e] bg-[#e8f5e9] text-[#1b5e20]"
                 : "border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153]"
             }`}
-            aria-label="Validar Notificações"
-            title="Validar Notificações"
+            aria-label="Notificações"
+            title="Notificações"
           >
             <Bell className="w-4 h-4 text-[#2d6a3e]" />
+            {pendingNotifCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                {pendingNotifCount}
+              </span>
+            )}
           </Link>
 
-          {pathname !== "/insights" ? (
-            <Link
-              href="/insights"
-              className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center"
-              aria-label="Metas e Relatórios"
-              title="Metas"
-            >
-              <BarChart3 className="w-4 h-4 text-[#2d6a3e]" />
-            </Link>
-          ) : (
-            <Link
-              href="/"
-              className="h-9 px-2.5 rounded-lg border border-[#d5ded8] bg-[#eff3f0] text-[#141f17] flex items-center gap-1.5 text-xs font-semibold"
-            >
-              <Plus className="w-3.5 h-3.5 text-[#2d6a3e]" />
-              <span>Lançar</span>
-            </Link>
-          )}
+          <Link
+            href={pathname === "/insights" ? "/" : "/insights"}
+            className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center"
+            aria-label="Metas"
+            title="Metas"
+          >
+            <BarChart3 className="w-4 h-4 text-[#2d6a3e]" />
+          </Link>
 
           <button
             type="button"
@@ -215,24 +149,14 @@ export function TopNavbar({
           >
             <SlidersHorizontal className="w-4 h-4" />
           </button>
-
-          <button
-            type="button"
-            onClick={handleLock}
-            className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-white active:bg-[#eff3f0] text-[#526657] flex items-center justify-center cursor-pointer"
-            aria-label="Bloquear Sessão"
-            title="Bloquear Sessão"
-          >
-            <Lock className="w-4 h-4" />
-          </button>
         </div>
       </header>
 
-      {/* DESKTOP HEADER: Full analytical toolbar */}
+      {/* DESKTOP HEADER: Clean & direct without extra clutter */}
       <header className="hidden lg:flex h-11 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30">
-        {/* Left: Animated Tabs (Aceternity layoutId style) & Quarter Navigator */}
+        {/* Left: Main Navigation + Quarter Selector */}
         <div className="flex items-center gap-2">
-          <nav className="relative flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
+          <nav className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
             {[
               { href: "/", label: "Fluxo", icon: Table2 },
               { href: "/insights", label: "Metas", icon: BarChart3 },
@@ -244,19 +168,19 @@ export function TopNavbar({
                 <Link
                   key={tab.href}
                   href={tab.href}
-                  className={`relative px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors z-10 ${
-                    isActive ? "text-[#141f17]" : "text-[#4e6153] hover:text-[#141f17]"
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                    isActive
+                      ? "bg-white text-[#141f17] shadow-2xs border border-[#d5ded8]/80"
+                      : "text-[#4e6153] hover:text-[#141f17]"
                   }`}
                 >
-                  {isActive && (
-                    <motion.span
-                      layoutId="top-nav-active-pill"
-                      transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                      className="absolute inset-0 bg-white rounded-md shadow-2xs border border-[#d5ded8]/80 -z-10"
-                    />
-                  )}
                   <Icon className="w-3.5 h-3.5 text-[#2d6a3e]" />
                   <span>{tab.label}</span>
+                  {tab.href === "/notificacoes" && pendingNotifCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold tabular-nums">
+                      {pendingNotifCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -289,27 +213,31 @@ export function TopNavbar({
           </div>
         </div>
 
-        {/* Center: Live Balances with Untitled UI status rings */}
+        {/* Center: Live Balances */}
         <div className="hidden lg:flex items-center gap-2 text-xs tabular-nums">
           <div
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eff3f0] border border-[#d5ded8]"
             title={`Dia atual: ${formatFullDate(settings.referenceToday)}`}
           >
             <span
-              className="w-2 h-2 rounded-full ring-3 ring-current/15"
-              style={{ backgroundColor: todayLiquidity.hex, color: todayLiquidity.hex }}
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: todayLiquidity.hex }}
             />
             <span className="text-[#526657] font-medium">Hoje:</span>
-            <span className="font-bold text-[#141f17]">{formatBRL(currentBalance)}</span>
+            <span className="font-bold text-[#141f17]">
+              {formatBRL(currentBalance)}
+            </span>
           </div>
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eff3f0] border border-[#d5ded8]">
             <span
-              className="w-2 h-2 rounded-full ring-3 ring-current/15"
-              style={{ backgroundColor: endLiquidity.hex, color: endLiquidity.hex }}
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: endLiquidity.hex }}
             />
             <span className="text-[#526657] font-medium">Fim Mês:</span>
-            <span className="font-bold text-[#141f17]">{formatBRL(projectedEndOfMonth)}</span>
+            <span className="font-bold text-[#141f17]">
+              {formatBRL(projectedEndOfMonth)}
+            </span>
             {simulationImpact !== 0 && (
               <span className="text-[11px] font-semibold text-[#7c5800] bg-[#fff3cd] px-1.5 py-0.2 rounded border border-[#ffe69c]">
                 {formatBRL(simulationImpact, true)}
@@ -320,42 +248,22 @@ export function TopNavbar({
           {projectedQuarterEnd !== undefined && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eff3f0] border border-[#d5ded8]">
               <span className="text-[#526657] font-medium">Fim Trimestre:</span>
-              <span className="font-bold text-[#141f17]">{formatBRL(projectedQuarterEnd)}</span>
+              <span className="font-bold text-[#141f17]">
+                {formatBRL(projectedQuarterEnd)}
+              </span>
             </div>
           )}
         </div>
 
-        {/* Right: Dev Command Palette + Actions with <kbd> badges */}
+        {/* Right: Only Essential Actions (Fixos, Config) - RN-01/RN-02 */}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCommandPaletteOpen(true)}
-            className="hidden md:flex h-7 px-2 rounded-lg border border-[#d5ded8] bg-[#f8faf8] hover:bg-[#eff3f0] text-[#4e6153] items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer"
-            title="Command Palette (Ctrl+K)"
-          >
-            <Command className="w-3 h-3 text-[#2d6a3e]" />
-            <kbd className="text-[10px] font-semibold text-[#526657]">Ctrl K</kbd>
-          </button>
-
-          {onExportCSV && (
-            <button
-              type="button"
-              onClick={onExportCSV}
-              className="hidden xl:flex h-7 px-2 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] items-center gap-1 text-xs font-medium cursor-pointer"
-              title="Exportar CSV"
-            >
-              <Download className="w-3.5 h-3.5 text-[#4e6153]" />
-              <span>CSV</span>
-            </button>
-          )}
-
           <button
             type="button"
             onClick={() => setRecurringModalOpen(true)}
             className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1 text-xs font-medium cursor-pointer"
           >
             <CalendarClock className="w-3.5 h-3.5 text-[#2d6a3e]" />
-            <span className="hidden sm:inline">Fixos</span>
+            <span>Fixos</span>
           </button>
 
           <button
@@ -364,56 +272,7 @@ export function TopNavbar({
             className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1 text-xs font-medium cursor-pointer"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-[#4e6153]" />
-            <span className="hidden sm:inline">Config</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              openLaunchModal({
-                date: settings.referenceToday,
-                isSimulation: true,
-                type: "expense_fixed",
-              })
-            }
-            className="h-7 px-2.5 rounded-lg border border-[#d9c27e] bg-[#fdf6e2] hover:bg-[#faeec9] text-[#5c4300] flex items-center gap-1 text-xs font-semibold cursor-pointer active:scale-[0.98] transition-transform"
-          >
-            <FlaskConical className="w-3.5 h-3.5" />
-            <span>Simular</span>
-            {pendingCount > 0 && (
-              <span className="px-1.5 rounded-full bg-[#5c4300] text-white text-[10px]">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              openLaunchModal({
-                date: settings.referenceToday,
-                isSimulation: false,
-                type: "expense_fixed",
-              })
-            }
-            className="h-7 px-2.5 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] text-white flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-[0.98] transition-transform"
-            title="Nova Saída Hoje (Ctrl+N)"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Lançar</span>
-            <kbd className="hidden sm:inline-block px-1 py-0.2 text-[9px] rounded bg-white/15 text-white/90 border border-white/20">
-              Ctrl N
-            </kbd>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleLock}
-            className="h-7 w-7 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#526657] hover:text-[#141f17] flex items-center justify-center cursor-pointer"
-            title="Bloquear Sessão"
-            aria-label="Bloquear Sessão"
-          >
-            <Lock className="w-3.5 h-3.5" />
+            <span>Config</span>
           </button>
         </div>
       </header>

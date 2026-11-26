@@ -180,6 +180,157 @@ export async function updateTransactionAmountAction(
   revalidatePath("/insights");
 }
 
+export async function updateTransactionAction(input: {
+  id: string;
+  amount: number;
+  description?: string | null;
+  category?: string | null;
+  date?: string;
+  type?: "income" | "expense_fixed" | "expense_daily";
+  paymentMethod?: "cash" | "credit_card";
+}) {
+  await ensureSchema();
+  const effectiveType = input.type ?? null;
+  const effectiveMethod =
+    effectiveType && effectiveType !== "expense_fixed"
+      ? "cash"
+      : input.paymentMethod ?? null;
+
+  await client.execute({
+    sql: `UPDATE transactions
+          SET amount = ?,
+              description = ?,
+              category = ?,
+              date = COALESCE(?, date),
+              type = COALESCE(?, type),
+              payment_method = COALESCE(?, payment_method)
+          WHERE id = ?`,
+    args: [
+      Number(input.amount.toFixed(2)),
+      input.description ? input.description.trim() : null,
+      input.category ? input.category.trim() : null,
+      input.date ?? null,
+      effectiveType,
+      effectiveMethod,
+      input.id,
+    ],
+  });
+  revalidatePath("/");
+  revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+}
+
+export async function saveEditedMovementAction(input: {
+  sourceKind: "transaction" | "daily_override";
+  transactionId?: string;
+  originalDate: string;
+  targetDate: string;
+  targetType: "expense_fixed" | "expense_daily" | "income";
+  dailyMode?: "add" | "set";
+  amount: number;
+  description?: string | null;
+  category?: string | null;
+  paymentMethod?: "cash" | "credit_card";
+}) {
+  await ensureSchema();
+  const cleanAmount = Number(Math.max(0, input.amount).toFixed(2));
+  const rawSettings = await db.select().from(settings);
+  const settingsMap = new Map(rawSettings.map((s) => [s.key, s.value]));
+  const defaultDailyTarget = Number(
+    settingsMap.get("daily_spending_target") ?? "50.00"
+  );
+
+  if (input.sourceKind === "transaction" && input.transactionId) {
+    if (input.targetType === "expense_daily") {
+      // Converting an existing transaction (Saída/Entrada) into Diário
+      await db
+        .delete(transactions)
+        .where(eq(transactions.id, input.transactionId));
+
+      const existingOv = await db
+        .select()
+        .from(dailyOverrides)
+        .where(eq(dailyOverrides.date, input.targetDate))
+        .limit(1);
+
+      const currentBase = existingOv[0]
+        ? existingOv[0].amount
+        : defaultDailyTarget;
+
+      const nextDaily =
+        input.dailyMode === "set"
+          ? cleanAmount
+          : Number((currentBase + cleanAmount).toFixed(2));
+
+      const nextNote = input.description
+        ? existingOv[0]?.note
+          ? `${existingOv[0].note} | ${input.description}`
+          : input.description
+        : existingOv[0]?.note ?? null;
+
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO daily_overrides (date, amount, note, is_reconciled) VALUES (?, ?, ?, 1)`,
+        args: [input.targetDate, nextDaily, nextNote],
+      });
+    } else {
+      // Updating transaction (including switching between Saída and Entrada)
+      await client.execute({
+        sql: `UPDATE transactions
+              SET amount = ?,
+                  date = ?,
+                  type = ?,
+                  description = ?,
+                  category = ?,
+                  payment_method = ?
+              WHERE id = ?`,
+        args: [
+          cleanAmount,
+          input.targetDate,
+          input.targetType,
+          input.description || null,
+          input.category || null,
+          input.targetType === "income"
+            ? "cash"
+            : input.paymentMethod || "cash",
+          input.transactionId,
+        ],
+      });
+    }
+  } else if (input.sourceKind === "daily_override") {
+    if (input.targetType === "expense_daily") {
+      // Updating Diário directly
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO daily_overrides (date, amount, note, is_reconciled) VALUES (?, ?, ?, 1)`,
+        args: [input.targetDate, cleanAmount, input.description || null],
+      });
+    } else {
+      // Converting Diário into Saída or Entrada: zero the daily override on originalDate and create the transaction
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO daily_overrides (date, amount, note, is_reconciled) VALUES (?, 0, NULL, 1)`,
+        args: [input.originalDate],
+      });
+
+      await createRealTransactionAction({
+        date: input.targetDate,
+        type: input.targetType,
+        amount: cleanAmount,
+        description: input.description || undefined,
+        category: input.category || undefined,
+        paymentMethod:
+          input.targetType === "income"
+            ? "cash"
+            : input.paymentMethod || "cash",
+        installments: 1,
+        isSimulation: false,
+      });
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+}
+
 export async function upsertDailyOverrideAction(date: string, amount: number, note?: string) {
   await client.execute({
     sql: `INSERT OR REPLACE INTO daily_overrides (date, amount, note, is_reconciled) VALUES (?, ?, ?, 1)`,
@@ -429,31 +580,26 @@ async function processSingleNotificationApproval(
   let linkedTxId = `daily_${input.date}`;
 
   if (input.targetMode === "daily_add" || input.targetMode === "daily_set") {
-    const existingOvRows = await db
-      .select()
-      .from(dailyOverrides)
-      .where(eq(dailyOverrides.date, input.date))
-      .limit(1);
-
-    const currentBase = existingOvRows[0]
-      ? existingOvRows[0].amount
-      : defaultDailyTarget;
-
-    const nextAmount =
-      input.targetMode === "daily_add"
-        ? Number((currentBase + cleanAmount).toFixed(2))
-        : cleanAmount;
-
-    const existingNote = existingOvRows[0]?.note;
-    const nextNote = input.description
-      ? existingNote
-        ? `${existingNote} | ${input.description}`
-        : input.description
-      : existingNote ?? null;
-
-    await client.execute({
-      sql: `INSERT OR REPLACE INTO daily_overrides (date, amount, note, is_reconciled) VALUES (?, ?, ?, 1)`,
-      args: [input.date, nextAmount, nextNote],
+    // RN-03 & RN-04: Every Diário entry is an individual transaction with its own properties
+    const now = new Date().toISOString();
+    const txId = `tx_${crypto.randomUUID()}`;
+    linkedTxId = txId;
+    await db.insert(transactions).values({
+      id: txId,
+      date: input.date,
+      type: "expense_daily",
+      amount: cleanAmount,
+      description: input.description || null,
+      category: input.category || null,
+      paymentMethod: "cash",
+      purchaseDate: input.date,
+      isSimulation: 0,
+      isReconciled: 1,
+      installmentCurrent: null,
+      installmentTotal: null,
+      installmentGroupId: null,
+      recurringRuleId: null,
+      createdAt: now,
     });
   } else {
     // 'expense_fixed' (Saída) or 'income' (Entrada)
@@ -507,8 +653,13 @@ async function processSingleNotificationApproval(
   }
 
   await client.execute({
-    sql: `UPDATE mobile_notifications SET status = 'processed', transaction_id = ? WHERE id = ?`,
-    args: [linkedTxId, input.id],
+    sql: `UPDATE mobile_notifications
+          SET status = 'processed',
+              transaction_id = ?,
+              parsed_amount = ?,
+              event_date = ?
+          WHERE id = ?`,
+    args: [linkedTxId, cleanAmount, input.date, input.id],
   });
 
   return { ok: true, transactionId: linkedTxId };
@@ -581,6 +732,60 @@ export async function reopenNotificationAction(id: string) {
     args: [id],
   });
   revalidatePath("/");
+  revalidatePath("/notificacoes");
+  return { ok: true };
+}
+
+export async function revertApprovedNotificationAction(id: string) {
+  await ensureSchema();
+  const rows = await db
+    .select()
+    .from(mobileNotifications)
+    .where(eq(mobileNotifications.id, id))
+    .limit(1);
+
+  const notif = rows[0];
+  if (!notif) {
+    return { ok: false, error: "Notificação não encontrada." };
+  }
+
+  if (notif.status === "processed" && notif.transactionId) {
+    if (notif.transactionId.startsWith("tx_")) {
+      await db
+        .delete(transactions)
+        .where(eq(transactions.id, notif.transactionId));
+    } else if (
+      notif.transactionId.startsWith("daily_") &&
+      notif.parsedAmount &&
+      notif.parsedAmount > 0
+    ) {
+      const targetDate = notif.transactionId.replace("daily_", "");
+      const existingOv = await db
+        .select()
+        .from(dailyOverrides)
+        .where(eq(dailyOverrides.date, targetDate))
+        .limit(1);
+
+      if (existingOv[0]) {
+        const revertedAmount = Math.max(
+          0,
+          Number((existingOv[0].amount - notif.parsedAmount).toFixed(2))
+        );
+        await client.execute({
+          sql: `UPDATE daily_overrides SET amount = ? WHERE date = ?`,
+          args: [revertedAmount, targetDate],
+        });
+      }
+    }
+  }
+
+  await client.execute({
+    sql: `UPDATE mobile_notifications SET status = 'pending', transaction_id = NULL WHERE id = ?`,
+    args: [id],
+  });
+
+  revalidatePath("/");
+  revalidatePath("/insights");
   revalidatePath("/notificacoes");
   return { ok: true };
 }

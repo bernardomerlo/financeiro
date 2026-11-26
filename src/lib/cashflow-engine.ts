@@ -384,6 +384,8 @@ export function calculateCashflowProjection(input: CalculateCashflowInput): Calc
       let simFixedOut = 0;
       let extraRealDaily = 0;
       let extraSimDaily = 0;
+      let hasRealDailyTx = false;
+      let hasSimDailyTx = false;
 
       if (!isOnOrBeforeAnchor) {
         // 1. Recurring rules for this day of month
@@ -415,7 +417,7 @@ export function calculateCashflowProjection(input: CalculateCashflowInput): Calc
           }
         }
 
-        // 2. Direct & Credit Card Transactions
+        // 2. Direct & Credit Card Transactions (including individual expense_daily transactions)
         const dayTxs = txByDate.get(dateIso) || [];
         for (const tx of dayTxs) {
           const installmentLabel =
@@ -428,6 +430,7 @@ export function calculateCashflowProjection(input: CalculateCashflowInput): Calc
               simIncome += tx.amount;
             } else if (tx.type === "expense_daily") {
               extraSimDaily += tx.amount;
+              hasSimDailyTx = true;
             } else {
               simFixedOut += tx.amount;
             }
@@ -447,12 +450,20 @@ export function calculateCashflowProjection(input: CalculateCashflowInput): Calc
               realIncome += tx.amount;
             } else if (tx.type === "expense_daily") {
               extraRealDaily += tx.amount;
+              hasRealDailyTx = true;
             } else {
               realFixedOut += tx.amount;
             }
             items.push({
               id: tx.id,
-              title: tx.description || tx.category || (tx.type === "income" ? "Entrada" : "Saída"),
+              title:
+                tx.description ||
+                tx.category ||
+                (tx.type === "income"
+                  ? "Entrada"
+                  : tx.type === "expense_daily"
+                  ? "Diário"
+                  : "Saída"),
               amount: tx.amount,
               type: tx.type,
               category: tx.category,
@@ -465,16 +476,43 @@ export function calculateCashflowProjection(input: CalculateCashflowInput): Calc
         }
       }
 
-      // 3. Daily spending (DIÁRIO column)
+      // 3. Daily spending (DIÁRIO column) - RN-03, RN-04, RN-06
+      // - Days with expense_daily transactions: sum of those transactions.
+      // - Past/Today days without expense_daily transactions: 0 (unless explicit non-memory override in tests).
+      // - Future days without expense_daily transactions: projects settings.dailySpendingTarget (or simulation override).
       const override = overridesByDate.get(dateIso);
-      const baseDaily = isOnOrBeforeAnchor
-        ? 0
-        : override !== undefined
-        ? override.amount
-        : settings.dailySpendingTarget;
+      let realDailyAmount = 0;
+      let effectiveDailyAmount = 0;
 
-      const realDailyAmount = baseDaily + extraRealDaily;
-      const effectiveDailyAmount = realDailyAmount + (includeSimulations ? extraSimDaily : 0);
+      if (!isOnOrBeforeAnchor) {
+        if (hasRealDailyTx) {
+          realDailyAmount = extraRealDaily;
+          effectiveDailyAmount =
+            extraRealDaily + (includeSimulations ? extraSimDaily : 0);
+        } else if (override !== undefined && !override.isInMemory) {
+          realDailyAmount = override.amount;
+          effectiveDailyAmount =
+            override.amount + (includeSimulations ? extraSimDaily : 0);
+        } else if (isFuture) {
+          realDailyAmount = settings.dailySpendingTarget;
+          if (includeSimulations && hasSimDailyTx) {
+            effectiveDailyAmount = extraSimDaily;
+          } else if (includeSimulations && override?.isInMemory) {
+            effectiveDailyAmount = override.amount;
+          } else {
+            effectiveDailyAmount = settings.dailySpendingTarget;
+          }
+        } else {
+          realDailyAmount = 0;
+          if (includeSimulations && hasSimDailyTx) {
+            effectiveDailyAmount = extraSimDaily;
+          } else if (includeSimulations && override?.isInMemory) {
+            effectiveDailyAmount = override.amount;
+          } else {
+            effectiveDailyAmount = 0;
+          }
+        }
+      }
 
       // 4. Cascade running balance
       if (!isOnOrBeforeAnchor) {
@@ -482,15 +520,22 @@ export function calculateCashflowProjection(input: CalculateCashflowInput): Calc
           (runningRealBalance + realIncome - realFixedOut - realDailyAmount).toFixed(2)
         );
         const activeSimIn = includeSimulations ? simIncome : 0;
-        const activeSimOut = includeSimulations ? simFixedOut + extraSimDaily : 0;
+        const activeSimFixedOut = includeSimulations ? simFixedOut : 0;
         runningProjectedBalance = Number(
-          (runningProjectedBalance + realIncome + activeSimIn - realFixedOut - activeSimOut - realDailyAmount).toFixed(2)
+          (
+            runningProjectedBalance +
+            realIncome +
+            activeSimIn -
+            realFixedOut -
+            activeSimFixedOut -
+            effectiveDailyAmount
+          ).toFixed(2)
         );
       }
 
       const displayIncome = realIncome + (includeSimulations ? simIncome : 0);
       const displayFixedOut = realFixedOut + (includeSimulations ? simFixedOut : 0);
-      const isDayReconciled = isPast || (isToday && override !== undefined);
+      const isDayReconciled = isPast || (isToday && (hasRealDailyTx || override !== undefined));
 
       if (isDayReconciled) {
         reconciledCount++;
