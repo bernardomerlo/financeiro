@@ -26,6 +26,7 @@ import {
 import { CATEGORIES, formatBRL, formatFullDate } from "@/lib/format";
 import {
   createRealTransactionAction,
+  createTagAction,
   deleteTransactionAction,
   fetchInitialCashflowData,
   updateTransactionAction,
@@ -50,7 +51,16 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
     updateStagedSimulation,
     stageDeleteTransaction,
     hydrateFromServer,
+    setLocalTags,
   } = useCashflowStore();
+
+  const availableTags = useMemo(
+    () =>
+      settings.tags && settings.tags.length > 0
+        ? settings.tags
+        : [...CATEGORIES],
+    [settings.tags]
+  );
 
   // Fixed date from the clicked cell in the table (RN-01, RN-02)
   const date = launchModalPresetDate || settings.referenceToday;
@@ -83,6 +93,44 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
 
+  // Quick inline Tag creation state
+  const [isCreatingTagNew, setIsCreatingTagNew] = useState(false);
+  const [newTagInput, setNewTagInput] = useState("");
+  const [isCreatingTagEdit, setIsCreatingTagEdit] = useState(false);
+  const [editTagInput, setEditTagInput] = useState("");
+  const [isSavingTag, setIsSavingTag] = useState(false);
+
+  async function handleQuickCreateTag(
+    tagName: string,
+    target: "new" | "edit"
+  ) {
+    const cleaned = tagName.trim();
+    if (!cleaned) {
+      toast.error("Informe o nome da tag.");
+      return;
+    }
+    setIsSavingTag(true);
+    try {
+      const updated = await createTagAction(cleaned);
+      setLocalTags(updated);
+      if (target === "new") {
+        setCategory(cleaned);
+        setNewTagInput("");
+        setIsCreatingTagNew(false);
+      } else {
+        setEditCategory(cleaned);
+        setEditTagInput("");
+        setIsCreatingTagEdit(false);
+      }
+      toast.success(`Tag "${cleaned}" cadastrada.`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao cadastrar tag.");
+    } finally {
+      setIsSavingTag(false);
+    }
+  }
+
   useEffect(() => {
     if (isLaunchModalOpen) {
       setIsSimulation(launchModalPresetSimulation);
@@ -107,7 +155,7 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
       ...dbTransactions.filter((t) => !deletedSet.has(t.id)),
       ...stagedTransactions,
     ];
-    return all.filter((t) => t.date === date);
+    return all.filter((t) => t.date === date && t.amount > 0);
   }, [dbTransactions, stagedTransactions, stagedDeletedTxIds, date]);
 
   const dayDailyTransactions = useMemo(
@@ -392,10 +440,10 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
               </button>
             </div>
 
-            <div className="p-4 space-y-4 max-h-[82dvh] overflow-y-auto thin-scroll">
+            <div className="p-4 space-y-4 max-h-[82dvh] overflow-y-auto overflow-x-hidden thin-scroll">
               {/* 1. LISTA DE TRANSAÇÕES DO DIA (COM EDIÇÃO INLINE - RN-04, RN-07) */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-bold text-[#141f17]">
                     Transações em {formatFullDate(date)} ({dayTransactions.length})
                   </span>
@@ -585,24 +633,73 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
                                 />
                               </div>
 
-                              <div>
-                                <label className="block text-[10px] font-bold text-[#526657] uppercase mb-0.5">
-                                  Categoria
-                                </label>
-                                <select
-                                  value={editCategory}
-                                  onChange={(e) =>
-                                    setEditCategory(e.target.value)
-                                  }
-                                  className="w-full h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
-                                >
-                                  <option value="">Sem categoria</option>
-                                  {CATEGORIES.map((cat) => (
-                                    <option key={cat} value={cat}>
-                                      {cat}
-                                    </option>
-                                  ))}
-                                </select>
+                              <div className="min-w-0">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <label className="block text-[10px] font-bold text-[#526657] uppercase">
+                                    Tag / Categoria
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setIsCreatingTagEdit((prev) => !prev)
+                                    }
+                                    className="text-[10px] font-bold text-[#2d6a3e] hover:underline flex items-center gap-0.5 cursor-pointer"
+                                  >
+                                    <Plus className="w-2.5 h-2.5" />
+                                    <span>Nova Tag</span>
+                                  </button>
+                                </div>
+                                {isCreatingTagEdit ? (
+                                  <div className="flex items-center gap-1 min-w-0">
+                                    <input
+                                      type="text"
+                                      autoFocus
+                                      placeholder="Nome da tag..."
+                                      value={editTagInput}
+                                      onChange={(e) =>
+                                        setEditTagInput(e.target.value)
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          handleQuickCreateTag(
+                                            editTagInput,
+                                            "edit"
+                                          );
+                                        }
+                                      }}
+                                      className="min-w-0 flex-1 h-9 px-2 rounded-lg border border-[#2d6a3e] bg-white text-xs text-[#141f17]"
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={isSavingTag}
+                                      onClick={() =>
+                                        handleQuickCreateTag(
+                                          editTagInput,
+                                          "edit"
+                                        )
+                                      }
+                                      className="h-9 px-2.5 rounded-lg bg-[#2d6a3e] text-white text-xs font-bold shrink-0 cursor-pointer"
+                                    >
+                                      OK
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <select
+                                    value={editCategory}
+                                    onChange={(e) =>
+                                      setEditCategory(e.target.value)
+                                    }
+                                    className="w-full min-w-0 h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
+                                  >
+                                    <option value="">Sem tag</option>
+                                    {availableTags.map((cat) => (
+                                      <option key={cat} value={cat}>
+                                        {cat}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
                               </div>
                             </div>
 
@@ -865,27 +962,74 @@ export function LaunchModal({ currentEndOfMonthBalance }: LaunchModalProps) {
                   </div>
                 )}
 
-                {/* Descrição & Categoria (Presentes em todos os tipos, inclusive Diário - RN-05) */}
+                {/* Descrição & Tag/Categoria (Presentes em todos os tipos, inclusive Diário - RN-05) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input
                     type="text"
                     placeholder="Descrição (opcional)"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-xs text-[#141f17]"
+                    className="w-full min-w-0 h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-xs text-[#141f17]"
                   />
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
-                  >
-                    <option value="">Categoria (opcional)</option>
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
+                  {isCreatingTagNew ? (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Nova tag..."
+                        value={newTagInput}
+                        onChange={(e) => setNewTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleQuickCreateTag(newTagInput, "new");
+                          } else if (e.key === "Escape") {
+                            setIsCreatingTagNew(false);
+                          }
+                        }}
+                        className="min-w-0 flex-1 h-9 px-2.5 rounded-lg border border-[#2d6a3e] bg-white text-xs text-[#141f17]"
+                      />
+                      <button
+                        type="button"
+                        disabled={isSavingTag}
+                        onClick={() => handleQuickCreateTag(newTagInput, "new")}
+                        className="h-9 px-2.5 rounded-lg bg-[#2d6a3e] text-white text-xs font-bold shrink-0 cursor-pointer"
+                      >
+                        OK
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingTagNew(false)}
+                        className="h-9 px-2 rounded-lg border border-[#c5d1c8] text-xs text-[#526657] shrink-0 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <select
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        className="min-w-0 flex-1 h-9 px-2 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
+                      >
+                        <option value="">Tag (opcional)</option>
+                        {availableTags.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingTagNew(true)}
+                        className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-[#f8faf8] hover:bg-[#eff3f0] text-xs font-bold text-[#2d6a3e] flex items-center gap-0.5 shrink-0 cursor-pointer"
+                        title="Cadastrar nova tag"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Tag</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Simulação & Preview Fim do Mês */}

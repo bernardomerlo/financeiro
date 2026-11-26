@@ -14,7 +14,6 @@ import {
   X,
   RefreshCw,
   Plus,
-  Equal,
   TrendingDown,
   TrendingUp,
   RotateCcw,
@@ -22,6 +21,10 @@ import {
   CreditCard,
   Smartphone,
   Pencil,
+  Tag,
+  Copy,
+  AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashflowStore } from "@/store/use-cashflow-store";
@@ -30,10 +33,16 @@ import type {
   ComputedDayRow,
   DailyOverrideRecord,
 } from "@/lib/cashflow-engine";
-import { formatBRL, formatShortDate } from "@/lib/format";
+import { CATEGORIES, formatBRL, formatShortDate } from "@/lib/format";
+import {
+  cleanMacroDroidPlaceholders,
+  inferCategoryFromNotification,
+} from "@/lib/notification-parser";
 import {
   approveAllNotificationsAction,
   approveNotificationAction,
+  createTagAction,
+  deleteTagAction,
   fetchInitialCashflowData,
   fetchMobileNotificationsAction,
   rejectNotificationAction,
@@ -56,9 +65,19 @@ interface CardDraftState {
   amountStr: string;
   date: string;
   description: string;
+  category: string;
   targetMode: NotificationApprovalTarget;
   paymentMethod: "cash" | "credit_card";
 }
+
+const MACRODROID_FIXED_JSON = `{
+  "appPackage": "{not_app_package}",
+  "appName": "{not_app_name}",
+  "title": "{not_title}",
+  "message": "{notification}",
+  "bigText": "{not_sub_text}",
+  "timestamp": "{year}-{month_digit}-{dayofmonth} {hour}:{minute}:{second}"
+}`;
 
 const SWIPE_THRESHOLD = 85;
 
@@ -82,7 +101,15 @@ export function NotificationsValidator({
   settings,
   onPendingCountChange,
 }: NotificationsValidatorProps) {
-  const { hydrateFromServer } = useCashflowStore();
+  const { hydrateFromServer, setLocalTags } = useCashflowStore();
+
+  const availableTags = useMemo(
+    () =>
+      settings.tags && settings.tags.length > 0
+        ? settings.tags
+        : [...CATEGORIES],
+    [settings.tags],
+  );
 
   const [notifications, setNotifications] = useState<
     MobileNotificationRecord[]
@@ -98,6 +125,11 @@ export function NotificationsValidator({
   >("pending");
   const [defaultOutgoingTarget, setDefaultOutgoingTarget] =
     useState<NotificationApprovalTarget>("daily_add");
+
+  const [showTagsManager, setShowTagsManager] = useState(false);
+  const [newTagInput, setNewTagInput] = useState("");
+  const [isSavingTag, setIsSavingTag] = useState(false);
+  const [showMacroDroidHelper, setShowMacroDroidHelper] = useState(false);
 
   const [drafts, setDrafts] = useState<Record<string, CardDraftState>>({});
 
@@ -122,20 +154,30 @@ export function NotificationsValidator({
 
   const pendingNotifications = useMemo(
     () => notifications.filter((n) => n.status === "pending"),
-    [notifications]
+    [notifications],
   );
   const processedNotifications = useMemo(
     () => notifications.filter((n) => n.status === "processed"),
-    [notifications]
+    [notifications],
   );
   const ignoredNotifications = useMemo(
     () => notifications.filter((n) => n.status === "ignored"),
-    [notifications]
+    [notifications],
   );
 
   useEffect(() => {
     onPendingCountChange?.(pendingNotifications.length);
   }, [pendingNotifications.length, onPendingCountChange]);
+
+  const hasUnexpandedMacroDroidPayload = useMemo(
+    () =>
+      notifications.some(
+        (n) =>
+          (n.rawPayload && n.rawPayload.includes("{not_text}")) ||
+          n.message.includes("{not_text}"),
+      ),
+    [notifications],
+  );
 
   const getCardDraft = useCallback(
     (notif: MobileNotificationRecord): CardDraftState => {
@@ -146,13 +188,21 @@ export function NotificationsValidator({
         notif.detectedType === "incoming"
           ? "income"
           : notif.parsedPaymentMethod === "credit_card"
-          ? "expense_fixed"
-          : defaultOutgoingTarget;
+            ? "expense_fixed"
+            : defaultOutgoingTarget;
 
+      const cleanedMessage = cleanMacroDroidPlaceholders(notif.message) || "";
       const defaultDesc =
         notif.parsedMerchant ||
         [notif.appName, notif.title].filter(Boolean).join(" - ") ||
-        notif.message.slice(0, 60);
+        cleanedMessage.slice(0, 60);
+
+      const inferredCat =
+        inferCategoryFromNotification(
+          notif.parsedMerchant,
+          notif.title,
+          cleanedMessage,
+        ) || "";
 
       return {
         amountStr:
@@ -161,18 +211,57 @@ export function NotificationsValidator({
             : "",
         date: notif.eventDate || settings.referenceToday,
         description: defaultDesc,
+        category: inferredCat,
         targetMode: defaultTarget,
         paymentMethod:
           notif.parsedPaymentMethod === "credit_card" ? "credit_card" : "cash",
       };
     },
-    [drafts, defaultOutgoingTarget, settings.referenceToday]
+    [drafts, defaultOutgoingTarget, settings.referenceToday],
   );
+
+  async function handleCreateNewTag(
+    tagNameInput: string,
+    onCreated?: (createdTag: string) => void,
+  ) {
+    const cleaned = tagNameInput.trim();
+    if (!cleaned) {
+      toast.error("Informe o nome da tag.");
+      return;
+    }
+    setIsSavingTag(true);
+    try {
+      const updated = await createTagAction(cleaned);
+      setLocalTags(updated);
+      setNewTagInput("");
+      onCreated?.(cleaned);
+      toast.success(`Tag "${cleaned}" cadastrada.`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao cadastrar tag.");
+    } finally {
+      setIsSavingTag(false);
+    }
+  }
+
+  async function handleDeleteTag(tagToRemove: string) {
+    setIsSavingTag(true);
+    try {
+      const updated = await deleteTagAction(tagToRemove);
+      setLocalTags(updated);
+      toast.info(`Tag "${tagToRemove}" removida.`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao remover tag.");
+    } finally {
+      setIsSavingTag(false);
+    }
+  }
 
   function updateCardDraft(
     id: string,
     notif: MobileNotificationRecord,
-    patch: Partial<CardDraftState>
+    patch: Partial<CardDraftState>,
   ) {
     setDrafts((prev) => ({
       ...prev,
@@ -223,8 +312,8 @@ export function NotificationsValidator({
     setBusyIds((prev) => ({ ...prev, [notif.id]: true }));
     setNotifications((prev) =>
       prev.map((item) =>
-        item.id === notif.id ? { ...item, status: "processed" } : item
-      )
+        item.id === notif.id ? { ...item, status: "processed" } : item,
+      ),
     );
 
     try {
@@ -234,6 +323,7 @@ export function NotificationsValidator({
         date: draft.date,
         targetMode: draft.targetMode,
         description: draft.description.trim() || undefined,
+        category: draft.category.trim() || undefined,
         paymentMethod: draft.paymentMethod,
         installments: 1,
       });
@@ -242,14 +332,14 @@ export function NotificationsValidator({
 
       toast.success(
         `Aprovado: ${formatBRL(amount)} (${targetShortLabel(
-          draft.targetMode
+          draft.targetMode,
         )} em ${formatShortDate(draft.date)})`,
         {
           action: {
             label: "Estornar",
             onClick: () => handleRevertApproved(notif.id),
           },
-        }
+        },
       );
     } catch (err) {
       console.error(err);
@@ -264,8 +354,8 @@ export function NotificationsValidator({
     setBusyIds((prev) => ({ ...prev, [notif.id]: true }));
     setNotifications((prev) =>
       prev.map((item) =>
-        item.id === notif.id ? { ...item, status: "ignored" } : item
-      )
+        item.id === notif.id ? { ...item, status: "ignored" } : item,
+      ),
     );
 
     try {
@@ -326,6 +416,7 @@ export function NotificationsValidator({
           date: draft.date,
           targetMode: draft.targetMode,
           description: draft.description.trim() || undefined,
+          category: draft.category.trim() || undefined,
           paymentMethod: draft.paymentMethod,
           installments: 1,
         });
@@ -343,7 +434,7 @@ export function NotificationsValidator({
       await approveAllNotificationsAction(validPayloads);
       await refreshCashflowAndNotifications();
       toast.success(
-        `${validPayloads.length} aprovada(s) • Total ${formatBRL(totalValue)}`
+        `${validPayloads.length} aprovada(s) • Total ${formatBRL(totalValue)}`,
       );
     } catch (err) {
       console.error(err);
@@ -367,8 +458,8 @@ export function NotificationsValidator({
     statusTab === "pending"
       ? pendingNotifications
       : statusTab === "processed"
-      ? processedNotifications
-      : ignoredNotifications;
+        ? processedNotifications
+        : ignoredNotifications;
 
   return (
     <div className="space-y-2.5">
@@ -411,21 +502,118 @@ export function NotificationsValidator({
             })}
           </div>
 
-          <button
-            type="button"
-            onClick={() => loadNotifications(true)}
-            disabled={isLoading}
-            className="h-8 px-2.5 rounded-lg border border-[#cfd8d2] bg-[#f8faf8] hover:bg-[#eff3f0] text-xs font-semibold text-[#141f17] flex items-center gap-1 cursor-pointer shrink-0"
-            title="Atualizar lista"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 text-[#2d6a3e] ${
-                isLoading ? "animate-spin" : ""
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowTagsManager((prev) => !prev)}
+              className={`h-8 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                showTagsManager
+                  ? "bg-[#2d6a3e] border-[#2d6a3e] text-white"
+                  : "border-[#cfd8d2] bg-[#f8faf8] hover:bg-[#eff3f0] text-[#141f17]"
               }`}
-            />
-            <span className="hidden sm:inline">Atualizar</span>
-          </button>
+              title="Cadastrar e gerenciar tags"
+            >
+              <Tag className="w-3.5 h-3.5" />
+              <span>Tags ({availableTags.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowMacroDroidHelper((prev) => !prev)}
+              className={`h-8 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                showMacroDroidHelper
+                  ? "bg-[#2d6a3e] border-[#2d6a3e] text-white"
+                  : "border-[#cfd8d2] bg-[#f8faf8] hover:bg-[#eff3f0] text-[#141f17]"
+              }`}
+              title="Ver JSON corrigido do MacroDroid"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">MacroDroid</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => loadNotifications(true)}
+              disabled={isLoading}
+              className="h-8 px-2.5 rounded-lg border border-[#cfd8d2] bg-[#f8faf8] hover:bg-[#eff3f0] text-xs font-semibold text-[#141f17] flex items-center gap-1 cursor-pointer shrink-0"
+              title="Atualizar lista"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-[#2d6a3e] ${
+                  isLoading ? "animate-spin" : ""
+                }`}
+              />
+              <span className="hidden sm:inline">Atualizar</span>
+            </button>
+          </div>
         </div>
+
+        {/* Tags Registration & Management Panel */}
+        {showTagsManager && (
+          <div className="pt-2.5 border-t border-[#e4ebe6] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#141f17] flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-[#2d6a3e]" />
+                <span>Cadastrar e Gerenciar Tags</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTagsManager(false)}
+                className="text-[11px] font-semibold text-[#526657] hover:text-[#141f17] cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateNewTag(newTagInput);
+              }}
+              className="flex items-center gap-1.5"
+            >
+              <input
+                type="text"
+                value={newTagInput}
+                onChange={(e) => setNewTagInput(e.target.value)}
+                placeholder="Nova tag (ex.: iFood, Mercado, Pet, Farmácia...)"
+                className="flex-1 h-8 px-2.5 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
+              />
+              <button
+                type="submit"
+                disabled={isSavingTag || !newTagInput.trim()}
+                className="h-8 px-3 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                {isSavingTag ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
+                <span>Cadastrar Tag</span>
+              </button>
+            </form>
+
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {availableTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#eff3f0] border border-[#d5ded8] text-[11px] font-semibold text-[#141f17]"
+                >
+                  <span>{tag}</span>
+                  <button
+                    type="button"
+                    disabled={isSavingTag}
+                    onClick={() => handleDeleteTag(tag)}
+                    className="text-[#526657] hover:text-[#9e1c1c] cursor-pointer ml-0.5"
+                    title={`Remover tag ${tag}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Approve All + Default Destination Row (only when there are pending notifications) */}
         {statusTab === "pending" && pendingNotifications.length > 0 && (
@@ -496,8 +684,8 @@ export function NotificationsValidator({
             {statusTab === "pending"
               ? "Nenhuma notificação pendente"
               : statusTab === "processed"
-              ? "Nenhuma notificação aprovada"
-              : "Nenhuma notificação recusada"}
+                ? "Nenhuma notificação aprovada"
+                : "Nenhuma notificação recusada"}
           </div>
         </div>
       ) : (
@@ -508,7 +696,7 @@ export function NotificationsValidator({
               const parsedAmount = parseDraftAmount(draft.amountStr);
               const dayRow = allDaysMap[draft.date];
               const existingOv = dailyOverrides.find(
-                (o) => o.date === draft.date
+                (o) => o.date === draft.date,
               );
               const currentDailyVal =
                 dayRow?.dailyAmount ??
@@ -522,8 +710,10 @@ export function NotificationsValidator({
                   draft={draft}
                   parsedAmount={parsedAmount}
                   currentDailyVal={currentDailyVal}
+                  availableTags={availableTags}
                   isBusy={Boolean(busyIds[notif.id])}
                   isEditing={Boolean(expandedEditIds[notif.id])}
+                  isSavingTag={isSavingTag}
                   onToggleEdit={() =>
                     setExpandedEditIds((prev) => ({
                       ...prev,
@@ -532,6 +722,9 @@ export function NotificationsValidator({
                   }
                   onUpdateDraft={(patch) =>
                     updateCardDraft(notif.id, notif, patch)
+                  }
+                  onCreateTag={(tagName, onCreated) =>
+                    handleCreateNewTag(tagName, onCreated)
                   }
                   onApprove={() => handleApproveSingle(notif)}
                   onReject={() => handleRejectSingle(notif)}
@@ -552,10 +745,13 @@ interface SwipeableNotificationCardProps {
   draft: CardDraftState;
   parsedAmount: number;
   currentDailyVal: number;
+  availableTags: string[];
   isBusy: boolean;
   isEditing: boolean;
+  isSavingTag: boolean;
   onToggleEdit: () => void;
   onUpdateDraft: (patch: Partial<CardDraftState>) => void;
+  onCreateTag: (tagName: string, onCreated?: (tag: string) => void) => void;
   onApprove: () => void;
   onReject: () => void;
   onReopen: () => void;
@@ -567,10 +763,13 @@ function SwipeableNotificationCard({
   draft,
   parsedAmount,
   currentDailyVal,
+  availableTags,
   isBusy,
   isEditing,
+  isSavingTag,
   onToggleEdit,
   onUpdateDraft,
+  onCreateTag,
   onApprove,
   onReject,
   onReopen,
@@ -578,13 +777,15 @@ function SwipeableNotificationCard({
 }: SwipeableNotificationCardProps) {
   const isPending = notification.status === "pending";
   const x = useMotionValue(0);
+  const [isCreatingInlineTag, setIsCreatingInlineTag] = useState(false);
+  const [inlineTagInput, setInlineTagInput] = useState("");
 
   const approveOpacity = useTransform(x, [15, SWIPE_THRESHOLD], [0, 1]);
   const rejectOpacity = useTransform(x, [-15, -SWIPE_THRESHOLD], [0, 1]);
 
   function handleDragEnd(
     _: MouseEvent | TouchEvent | PointerEvent,
-    info: PanInfo
+    info: PanInfo,
   ) {
     if (!isPending || isBusy) return;
     if (info.offset.x >= SWIPE_THRESHOLD) {
@@ -599,12 +800,12 @@ function SwipeableNotificationCard({
     if (draft.targetMode === "daily_add") {
       const after = Number((currentDailyVal + parsedAmount).toFixed(2));
       return `${shortDate} • Diário: ${formatBRL(currentDailyVal)} ➔ ${formatBRL(
-        after
+        after,
       )}`;
     }
     if (draft.targetMode === "daily_set") {
       return `${shortDate} • Diário: ${formatBRL(
-        currentDailyVal
+        currentDailyVal,
       )} ➔ ${formatBRL(parsedAmount)}`;
     }
     if (draft.targetMode === "income") {
@@ -661,8 +862,8 @@ function SwipeableNotificationCard({
           notification.status === "processed"
             ? "border-[#a5d6a7]"
             : notification.status === "ignored"
-            ? "border-[#e0e0e0] opacity-75"
-            : "border-[#cfd8d2] touch-pan-y"
+              ? "border-[#e0e0e0] opacity-75"
+              : "border-[#cfd8d2] touch-pan-y"
         }`}
       >
         {/* Row 1: App Badge + 1-Tap Quick Switch (+Diário | Saída) + Editable Amount */}
@@ -743,16 +944,96 @@ function SwipeableNotificationCard({
           </div>
         </div>
 
-        {/* Row 2: Compact Notification Text + Impact Preview */}
+        {/* Row 2: Compact Notification Text + Impact Preview + Quick Tag Selector */}
         <div className="mt-1.5 text-xs text-[#37473b] line-clamp-2">
           {notification.title ? (
             <strong className="text-[#141f17]">{notification.title}: </strong>
           ) : null}
-          {notification.message}
+          {cleanMacroDroidPlaceholders(notification.message) ||
+            "(Texto da notificação não enviado pelo MacroDroid — use {notification})"}
         </div>
         {isPending && (
-          <div className="mt-1 text-[11px] font-semibold text-[#526657]">
-            {impactSummary}
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className="mt-1.5 flex flex-wrap items-center justify-between gap-2"
+          >
+            <div className="text-[11px] font-semibold text-[#526657]">
+              {impactSummary}
+            </div>
+
+            <div className="flex items-center gap-1">
+              {isCreatingInlineTag ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={inlineTagInput}
+                    onChange={(e) => setInlineTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        onCreateTag(inlineTagInput, (created) => {
+                          onUpdateDraft({ category: created });
+                          setInlineTagInput("");
+                          setIsCreatingInlineTag(false);
+                        });
+                      } else if (e.key === "Escape") {
+                        setIsCreatingInlineTag(false);
+                      }
+                    }}
+                    placeholder="Nova tag..."
+                    className="h-7 w-28 px-2 rounded-md border border-[#2d6a3e] bg-white text-[11px] text-[#141f17]"
+                  />
+                  <button
+                    type="button"
+                    disabled={isSavingTag}
+                    onClick={() =>
+                      onCreateTag(inlineTagInput, (created) => {
+                        onUpdateDraft({ category: created });
+                        setInlineTagInput("");
+                        setIsCreatingInlineTag(false);
+                      })
+                    }
+                    className="h-7 px-2 rounded-md bg-[#2d6a3e] text-white text-[11px] font-bold cursor-pointer"
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingInlineTag(false)}
+                    className="h-7 px-1.5 rounded-md border border-[#cfd8d2] text-[11px] text-[#526657] cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <select
+                    value={draft.category}
+                    onChange={(e) =>
+                      onUpdateDraft({ category: e.target.value })
+                    }
+                    className="h-7 px-2 rounded-md border border-[#cfd8d2] bg-[#f8faf8] text-[11px] font-semibold text-[#141f17]"
+                  >
+                    <option value="">Sem tag</option>
+                    {availableTags.map((tag) => (
+                      <option key={tag} value={tag}>
+                        Tag: {tag}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingInlineTag(true)}
+                    className="h-7 px-2 rounded-md border border-[#cfd8d2] bg-[#f8faf8] hover:bg-[#eff3f0] text-[11px] font-bold text-[#2d6a3e] flex items-center gap-0.5 cursor-pointer"
+                    title="Cadastrar nova tag"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Tag</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -790,7 +1071,7 @@ function SwipeableNotificationCard({
               })}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               <input
                 type="text"
                 inputMode="decimal"
@@ -805,7 +1086,19 @@ function SwipeableNotificationCard({
                 onChange={(e) => onUpdateDraft({ date: e.target.value })}
                 className="h-9 px-2 rounded-lg border border-[#c5d1c8] text-xs font-semibold text-[#141f17]"
               />
-              <div className="col-span-2 sm:col-span-1 flex items-center gap-1">
+              <select
+                value={draft.category}
+                onChange={(e) => onUpdateDraft({ category: e.target.value })}
+                className="h-9 px-2 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
+              >
+                <option value="">Tag / Categoria</option>
+                {availableTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center gap-1">
                 <input
                   type="text"
                   value={draft.description}

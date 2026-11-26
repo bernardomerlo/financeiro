@@ -33,6 +33,7 @@ import {
 } from "@/lib/format";
 import {
   createRealTransactionAction,
+  createTagAction,
   deleteTransactionAction,
   fetchInitialCashflowData,
   updateTransactionAction,
@@ -58,7 +59,16 @@ export function MobileQuickEntry({
     stageDeleteTransaction,
     updateStagedSimulation,
     hydrateFromServer,
+    setLocalTags,
   } = useCashflowStore();
+
+  const availableTags = useMemo(
+    () =>
+      settings.tags && settings.tags.length > 0
+        ? settings.tags
+        : [...CATEGORIES],
+    [settings.tags]
+  );
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const date = settings.referenceToday;
@@ -85,6 +95,32 @@ export function MobileQuickEntry({
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const [isCreatingTagNew, setIsCreatingTagNew] = useState(false);
+  const [newTagInput, setNewTagInput] = useState("");
+  const [isSavingTag, setIsSavingTag] = useState(false);
+
+  async function handleQuickCreateTag(tagName: string) {
+    const cleaned = tagName.trim();
+    if (!cleaned) {
+      toast.error("Informe o nome da tag.");
+      return;
+    }
+    setIsSavingTag(true);
+    try {
+      const updated = await createTagAction(cleaned);
+      setLocalTags(updated);
+      setCategory(cleaned);
+      setNewTagInput("");
+      setIsCreatingTagNew(false);
+      toast.success(`Tag "${cleaned}" cadastrada.`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao cadastrar tag.");
+    } finally {
+      setIsSavingTag(false);
+    }
+  }
 
   const parsedAmount = useMemo(() => {
     const cleaned = amountStr.replace(/[^\d,.-]/g, "").replace(",", ".");
@@ -420,7 +456,7 @@ export function MobileQuickEntry({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             <input
               type="text"
               placeholder="Descrição (opcional)"
@@ -428,18 +464,63 @@ export function MobileQuickEntry({
               onChange={(e) => setDescription(e.target.value)}
               className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-xs text-[#141f17]"
             />
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="h-9 px-2 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
-            >
-              <option value="">Categoria (opcional)</option>
-              {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+            {isCreatingTagNew ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Nova tag..."
+                  value={newTagInput}
+                  onChange={(e) => setNewTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleQuickCreateTag(newTagInput);
+                    }
+                  }}
+                  className="flex-1 h-9 px-2.5 rounded-lg border border-[#2d6a3e] bg-white text-xs text-[#141f17]"
+                />
+                <button
+                  type="button"
+                  disabled={isSavingTag}
+                  onClick={() => handleQuickCreateTag(newTagInput)}
+                  className="h-9 px-2.5 rounded-lg bg-[#2d6a3e] text-white text-xs font-bold cursor-pointer"
+                >
+                  OK
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingTagNew(false)}
+                  className="h-9 px-2 rounded-lg border border-[#c5d1c8] text-xs text-[#526657] cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="min-w-0 flex-1 h-9 px-2 rounded-lg border border-[#c5d1c8] bg-white text-xs text-[#141f17]"
+                >
+                  <option value="">Tag (opcional)</option>
+                  {availableTags.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingTagNew(true)}
+                  className="h-9 px-2.5 rounded-lg border border-[#c5d1c8] bg-[#f8faf8] text-xs font-bold text-[#2d6a3e] flex items-center gap-0.5 shrink-0 cursor-pointer"
+                  title="Cadastrar nova tag"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tag</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {txType === "expense_fixed" && paymentMethod === "credit_card" && (
@@ -550,8 +631,8 @@ export function MobileQuickEntry({
                         onChange={(e) => setEditCategory(e.target.value)}
                         className="h-8 px-2 rounded-lg border border-[#c5d1c8] bg-white text-xs flex-1"
                       >
-                        <option value="">Sem categoria</option>
-                        {CATEGORIES.map((cat) => (
+                        <option value="">Sem tag</option>
+                        {availableTags.map((cat) => (
                           <option key={cat} value={cat}>
                             {cat}
                           </option>

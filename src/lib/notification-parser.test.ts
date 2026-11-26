@@ -133,9 +133,57 @@ describe("notification-parser & idempotency", () => {
     expect(pipeItems[0].app).toBe("Nubank");
   });
 
-  it("resolves epoch seconds, epoch milliseconds, and BR dates accurately", () => {
+  it("parses Nubank NuPay debit notification (R$ 50,42 em iFood) accurately", () => {
+    const nupay = parseBrazilianBankNotification(
+      "Pagamento com NuPay aprovado",
+      "R$ 50,42 no débito com NuPay APROVADO em iFood."
+    );
+    expect(nupay.detectedType).toBe("outgoing");
+    expect(nupay.parsedAmount).toBe(50.42);
+    expect(nupay.parsedPaymentMethod).toBe("debit");
+    expect(nupay.parsedMerchant).toBe("iFood");
+  });
+
+  it("strips unexpanded MacroDroid placeholders like {not_text} and {hour_00}:{minute_00}:{second_00}", () => {
+    const normalized = normalizeSingleNotification({
+      appPackage: "com.nu.production",
+      appName: "Nubank",
+      title: "Pagamento com NuPay aprovado",
+      message: "{not_text}",
+      notification: "R$ 50,42 no débito com NuPay APROVADO em iFood.",
+      timestamp: "2026-11-26 {hour_00}:{minute_00}:{second_00}",
+    });
+
+    expect(normalized.message).toBe(
+      "R$ 50,42 no débito com NuPay APROVADO em iFood."
+    );
+    expect(normalized.parsedAmount).toBe(50.42);
+    expect(normalized.parsedMerchant).toBe("iFood");
+    expect(normalized.eventDate).toBe("2026-11-26");
+    expect(normalized.detectedType).toBe("outgoing");
+  });
+
+  it("handles notification when MacroDroid only sent title and unexpanded {not_text}", () => {
+    const normalized = normalizeSingleNotification({
+      appPackage: "com.nu.production",
+      appName: "Nubank",
+      title: "Pagamento com NuPay aprovado",
+      message: "{not_text}",
+      timestamp: "2026-11-26 19:03:00",
+    });
+
+    expect(normalized.message).toBe("Pagamento com NuPay aprovado");
+    expect(normalized.detectedType).toBe("outgoing");
+    expect(normalized.eventDate).toBe("2026-11-26");
+  });
+
+  it("resolves epoch seconds, epoch milliseconds, single-digit MacroDroid tokens, and BR dates accurately", () => {
     const br = resolveTimestampAndDate("25/11/2026 18:45:00");
     expect(br.eventDate).toBe("2026-11-25");
     expect(br.hasExplicitTimestamp).toBe(true);
+
+    const singleDigit = resolveTimestampAndDate("2026-11-6 9:3:5");
+    expect(singleDigit.eventDate).toBe("2026-11-06");
+    expect(singleDigit.originalTimestamp).toBe("2026-11-06T09:03:05.000-03:00");
   });
 });

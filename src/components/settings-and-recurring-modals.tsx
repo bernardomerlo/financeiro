@@ -10,6 +10,7 @@ import {
   Trash2,
   Check,
   Loader2,
+  Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashflowStore } from "@/store/use-cashflow-store";
@@ -18,6 +19,8 @@ import {
   upsertRecurringRuleAction,
   deleteRecurringRuleAction,
   fetchInitialCashflowData,
+  createTagAction,
+  deleteTagAction,
 } from "@/app/actions";
 import { CATEGORIES, formatBRL, formatFullDate } from "@/lib/format";
 
@@ -30,7 +33,48 @@ export function SettingsAndRecurringModals() {
     isRecurringModalOpen,
     setRecurringModalOpen,
     hydrateFromServer,
+    setLocalTags,
   } = useCashflowStore();
+
+  const availableTags =
+    settings.tags && settings.tags.length > 0 ? settings.tags : [...CATEGORIES];
+
+  const [newTagInput, setNewTagInput] = useState("");
+  const [isSavingTag, setIsSavingTag] = useState(false);
+
+  async function handleAddTag() {
+    const cleaned = newTagInput.trim();
+    if (!cleaned) {
+      toast.error("Informe o nome da tag.");
+      return;
+    }
+    setIsSavingTag(true);
+    try {
+      const updated = await createTagAction(cleaned);
+      setLocalTags(updated);
+      setNewTagInput("");
+      toast.success(`Tag "${cleaned}" cadastrada.`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao cadastrar tag.");
+    } finally {
+      setIsSavingTag(false);
+    }
+  }
+
+  async function handleRemoveTag(tagToRemove: string) {
+    setIsSavingTag(true);
+    try {
+      const updated = await deleteTagAction(tagToRemove);
+      setLocalTags(updated);
+      toast.info(`Tag "${tagToRemove}" removida.`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao remover tag.");
+    } finally {
+      setIsSavingTag(false);
+    }
+  }
 
   const [initialBalance, setInitialBalance] = useState(String(settings.initialBalance));
   const [initialBalanceDate, setInitialBalanceDate] = useState(settings.initialBalanceDate);
@@ -255,6 +299,60 @@ export function SettingsAndRecurringModals() {
                   </div>
                 </div>
 
+                <div className="pt-2 border-t border-[#e4ebe6] space-y-2">
+                  <label className="block font-bold text-[#141f17] flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-[#2d6a3e]" />
+                    <span>Tags / Categorias ({availableTags.length})</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={newTagInput}
+                      onChange={(e) => setNewTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddTag();
+                        }
+                      }}
+                      placeholder="Nova tag (ex.: iFood, Mercado, Pet...)"
+                      className="flex-1 h-9 px-2.5 rounded-lg border border-[#c5d1c8] text-xs"
+                    />
+                    <button
+                      type="button"
+                      disabled={isSavingTag || !newTagInput.trim()}
+                      onClick={handleAddTag}
+                      className="h-9 px-3 rounded-lg bg-[#2d6a3e] hover:bg-[#204f2d] disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      {isSavingTag ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="w-3.5 h-3.5" />
+                      )}
+                      <span>Cadastrar</span>
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {availableTags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#eff3f0] border border-[#d5ded8] text-[11px] font-semibold text-[#141f17]"
+                      >
+                        <span>{tag}</span>
+                        <button
+                          type="button"
+                          disabled={isSavingTag}
+                          onClick={() => handleRemoveTag(tag)}
+                          className="text-[#526657] hover:text-[#9e1c1c] cursor-pointer"
+                          title={`Remover tag ${tag}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="pt-2 flex justify-end gap-2">
                   <button
                     type="button"
@@ -382,7 +480,7 @@ export function SettingsAndRecurringModals() {
                       onChange={(e) => setRecCategory(e.target.value)}
                       className="w-full h-11 lg:h-8 px-2 rounded-lg lg:rounded border border-[#c5d1c8] bg-white text-base lg:text-xs"
                     >
-                      {CATEGORIES.map((c) => (
+                      {availableTags.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>

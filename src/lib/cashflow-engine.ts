@@ -18,6 +18,7 @@ export interface CashflowSettings {
   creditCardClosingDay: number;
   creditCardDueDay: number;
   referenceToday: string; // 'YYYY-MM-DD'
+  tags?: string[];
 }
 
 export interface TransactionRecord {
@@ -454,24 +455,26 @@ export function calculateCashflowProjection(input: CalculateCashflowInput): Calc
             } else {
               realFixedOut += tx.amount;
             }
-            items.push({
-              id: tx.id,
-              title:
-                tx.description ||
-                tx.category ||
-                (tx.type === "income"
-                  ? "Entrada"
-                  : tx.type === "expense_daily"
-                  ? "Diário"
-                  : "Saída"),
-              amount: tx.amount,
-              type: tx.type,
-              category: tx.category,
-              source: "transaction",
-              isReconciled: tx.isReconciled,
-              isInMemory: tx.isInMemory,
-              installmentLabel,
-            });
+            if (tx.amount > 0) {
+              items.push({
+                id: tx.id,
+                title:
+                  tx.description ||
+                  tx.category ||
+                  (tx.type === "income"
+                    ? "Entrada"
+                    : tx.type === "expense_daily"
+                    ? "Diário"
+                    : "Saída"),
+                amount: tx.amount,
+                type: tx.type,
+                category: tx.category,
+                source: "transaction",
+                isReconciled: tx.isReconciled,
+                isInMemory: tx.isInMemory,
+                installmentLabel,
+              });
+            }
           }
         }
       }

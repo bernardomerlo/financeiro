@@ -187,7 +187,8 @@ async function seed() {
   };
 
   for (const [date, amount] of Object.entries(exactDailyValues)) {
-    if (amount > 0) {
+    // Only seed historical daily values up to the spreadsheet snapshot date (RN-06)
+    if (amount > 0 && date <= "2026-11-24") {
       await db.insert(transactions).values({
         id: `tx_daily_${date}`,
         date,
@@ -198,7 +199,7 @@ async function seed() {
         paymentMethod: "cash",
         purchaseDate: date,
         isSimulation: 0,
-        isReconciled: date <= "2026-11-24" ? 1 : 0,
+        isReconciled: 1,
         createdAt: now,
       });
     }

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
   ChevronUp,
@@ -10,6 +11,9 @@ import {
   CalendarDays,
   CalendarClock,
   Bell,
+  ArrowRight,
+  Sparkles,
+  ArrowLeftRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashflowStore } from "@/store/use-cashflow-store";
@@ -32,7 +36,56 @@ import { SimulationFloatingBar } from "./simulation-floating-bar";
 import { SettingsAndRecurringModals } from "./settings-and-recurring-modals";
 import { MobileQuickEntry } from "./mobile-quick-entry";
 import { NotificationsValidator } from "./notifications-validator";
-import { fetchMobileNotificationsAction } from "@/app/actions";
+import {
+  fetchInitialCashflowData,
+  fetchMobileNotificationsAction,
+  moveDayFieldTransactionsAction,
+} from "@/app/actions";
+
+export type FieldColumnType = "income" | "expense_fixed" | "expense_daily";
+
+export interface DraggedCellInfo {
+  sourceDate: string;
+  colType: FieldColumnType;
+  amount: number;
+}
+
+export interface DragTargetInfo {
+  targetDate: string;
+  targetColType: FieldColumnType;
+}
+
+function getFieldMeta(colType: FieldColumnType) {
+  switch (colType) {
+    case "income":
+      return {
+        label: "Entrada",
+        badgeBg: "bg-[#e8f5e9] text-[#1b5e20] border-[#a5d6a7]",
+        targetCellClass:
+          "bg-[#c8e6c9]/90 ring-2 ring-inset ring-[#1b5e20] text-[#0d3b10] font-extrabold shadow-inner",
+        pulseBg: "bg-[#a5d6a7]/50 ring-2 ring-inset ring-[#1b5e20]",
+        sourceRing: "ring-[#1b5e20]",
+      };
+    case "expense_daily":
+      return {
+        label: "Diário",
+        badgeBg: "bg-[#fff3cd] text-[#7c5800] border-[#ffe69c]",
+        targetCellClass:
+          "bg-[#ffe69c]/90 ring-2 ring-inset ring-[#b27d00] text-[#4d3600] font-extrabold shadow-inner",
+        pulseBg: "bg-[#ffe69c]/65 ring-2 ring-inset ring-[#b27d00]",
+        sourceRing: "ring-[#b27d00]",
+      };
+    default:
+      return {
+        label: "Saída",
+        badgeBg: "bg-[#ffebee] text-[#9e1c1c] border-[#ef9a9a]",
+        targetCellClass:
+          "bg-[#ffcdd2]/90 ring-2 ring-inset ring-[#9e1c1c] text-[#5f0f0f] font-extrabold shadow-inner",
+        pulseBg: "bg-[#ffcdd2]/65 ring-2 ring-inset ring-[#9e1c1c]",
+        sourceRing: "ring-[#9e1c1c]",
+      };
+  }
+}
 
 interface CashflowDashboardClientProps {
   initialData: {
@@ -62,11 +115,112 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
     selectedDayForDetail,
     setSelectedDayForDetail,
     setRecurringModalOpen,
+    moveDayFieldOptimistic,
   } = useCashflowStore();
 
   const [mobileTab, setMobileTab] = useState<"launch" | "notifications" | "month">("launch");
   const [showPastMobileDays, setShowPastMobileDays] = useState(false);
   const [pendingNotifCount, setPendingNotifCount] = useState(0);
+  const [draggedCell, setDraggedCell] = useState<DraggedCellInfo | null>(null);
+  const [dragTarget, setDragTarget] = useState<DragTargetInfo | null>(null);
+  const [dragCursor, setDragCursor] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [recentlyDropped, setRecentlyDropped] = useState<{
+    date: string;
+    colType: FieldColumnType;
+    key: number;
+  } | null>(null);
+
+  const emptyDragImgRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      emptyDragImgRef.current = canvas;
+    }
+  }, []);
+
+  async function handleDropCell(
+    info: DraggedCellInfo,
+    targetDate: string,
+    targetColType: FieldColumnType
+  ) {
+    setDraggedCell(null);
+    setDragTarget(null);
+    setDragCursor(null);
+    if (
+      !info ||
+      !targetDate ||
+      (info.sourceDate === targetDate && info.colType === targetColType)
+    ) {
+      return;
+    }
+
+    const sourceMeta = getFieldMeta(info.colType);
+    const targetMeta = getFieldMeta(targetColType);
+    const isTypeChange = info.colType !== targetColType;
+    const isDateChange = info.sourceDate !== targetDate;
+
+    // Instant 0ms optimistic update in store + landing spring animation
+    moveDayFieldOptimistic(
+      info.sourceDate,
+      targetDate,
+      info.colType,
+      targetColType
+    );
+    setRecentlyDropped({
+      date: targetDate,
+      colType: targetColType,
+      key: Date.now(),
+    });
+    window.setTimeout(() => {
+      setRecentlyDropped((prev) =>
+        prev && prev.date === targetDate && prev.colType === targetColType
+          ? null
+          : prev
+      );
+    }, 1150);
+
+    try {
+      await moveDayFieldTransactionsAction({
+        sourceDate: info.sourceDate,
+        targetDate,
+        fieldType: info.colType,
+        targetFieldType: targetColType,
+      });
+      const fresh = await fetchInitialCashflowData();
+      hydrateFromServer(fresh);
+
+      if (isTypeChange && !isDateChange) {
+        toast.success(
+          `Convertido de ${sourceMeta.label} para ${targetMeta.label} (${formatBRL(
+            info.amount
+          )}) em ${formatShortDate(targetDate)}`
+        );
+      } else if (isTypeChange && isDateChange) {
+        toast.success(
+          `${sourceMeta.label} (${formatBRL(info.amount)}) de ${formatShortDate(
+            info.sourceDate
+          )} ➔ ${targetMeta.label} em ${formatShortDate(targetDate)}`
+        );
+      } else {
+        toast.success(
+          `${sourceMeta.label} (${formatBRL(
+            info.amount
+          )}) movido de ${formatShortDate(
+            info.sourceDate
+          )} para ${formatShortDate(targetDate)}`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao mover ou converter lançamento.");
+      const fresh = await fetchInitialCashflowData();
+      hydrateFromServer(fresh);
+    }
+  }
 
   useEffect(() => {
     hydrateFromServer(initialData);
@@ -188,18 +342,57 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
       />
 
       {/* DESKTOP VIEW: Pure 3-Month Spreadsheet Grid, 100dvh, Zero Excess Text, Zero Scroll */}
-      <main className="hidden lg:flex flex-col flex-1 min-h-0 p-2 overflow-hidden">
+      <main
+        className="hidden lg:flex flex-col flex-1 min-h-0 p-2 overflow-hidden relative"
+        onDragOver={(e) => {
+          if (draggedCell) {
+            setDragCursor({ x: e.clientX, y: e.clientY });
+          }
+        }}
+      >
         <div className="flex-1 min-h-0 bg-white rounded-lg border border-[#cfd8d2] shadow-2xs grid grid-cols-3 divide-x divide-[#cfd8d2] overflow-hidden">
           {projection.months.map((monthCol) => (
             <DesktopMonthColumn
               key={monthCol.yearMonth}
               column={monthCol}
+              draggedCell={draggedCell}
+              dragTarget={dragTarget}
+              recentlyDropped={recentlyDropped}
+              emptyDragCanvas={emptyDragImgRef.current}
+              onDragStartCell={(info, clientX, clientY) => {
+                setDraggedCell(info);
+                setDragCursor({ x: clientX, y: clientY });
+              }}
+              onDragOverTarget={(target, clientX, clientY) => {
+                setDragTarget(target);
+                setDragCursor({ x: clientX, y: clientY });
+              }}
+              onDragEndCell={() => {
+                setDraggedCell(null);
+                setDragTarget(null);
+                setDragCursor(null);
+              }}
+              onDropOnTarget={(info, targetDate, targetColType) =>
+                handleDropCell(info, targetDate, targetColType)
+              }
               onSelectCell={(dateIso, colType) =>
                 setSelectedDayForDetail(dateIso, colType)
               }
             />
           ))}
         </div>
+
+        {/* Floating Animated Drag Preview Pill following the Cursor */}
+        <AnimatePresence>
+          {draggedCell && dragCursor && (
+            <FloatingDragPreviewCard
+              draggedCell={draggedCell}
+              dragTarget={dragTarget}
+              cursor={dragCursor}
+              allDaysMap={projection.allDaysMap}
+            />
+          )}
+        </AnimatePresence>
       </main>
 
       {/* MOBILE VIEW: Quick Entry Hub (default) + Notifications Validator + Monthly Statement tab */}
@@ -429,16 +622,168 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
   );
 }
 
+interface FloatingDragPreviewCardProps {
+  draggedCell: DraggedCellInfo;
+  dragTarget: DragTargetInfo | null;
+  cursor: { x: number; y: number };
+  allDaysMap: Record<string, ComputedDayRow>;
+}
+
+function FloatingDragPreviewCard({
+  draggedCell,
+  dragTarget,
+  cursor,
+  allDaysMap,
+}: FloatingDragPreviewCardProps) {
+  const sourceMeta = getFieldMeta(draggedCell.colType);
+  const isValidDrop =
+    Boolean(dragTarget) &&
+    (dragTarget!.targetDate !== draggedCell.sourceDate ||
+      dragTarget!.targetColType !== draggedCell.colType);
+
+  const targetMeta = dragTarget
+    ? getFieldMeta(dragTarget.targetColType)
+    : sourceMeta;
+
+  const isTypeConversion =
+    isValidDrop && dragTarget!.targetColType !== draggedCell.colType;
+
+  const targetDayRow = dragTarget ? allDaysMap[dragTarget.targetDate] : null;
+  const currentTargetAmount = useMemo(() => {
+    if (!targetDayRow || !dragTarget) return 0;
+    if (dragTarget.targetColType === "income") return targetDayRow.incomeTotal;
+    if (dragTarget.targetColType === "expense_daily")
+      return targetDayRow.dailyAmount;
+    return targetDayRow.fixedExpenseTotal;
+  }, [targetDayRow, dragTarget]);
+
+  const newTargetAmount = Number(
+    (currentTargetAmount + draggedCell.amount).toFixed(2)
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.86, y: 6 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.86 }}
+      transition={{ type: "spring", stiffness: 520, damping: 28 }}
+      style={{
+        left: Math.min(
+          typeof window !== "undefined" ? window.innerWidth - 270 : cursor.x,
+          cursor.x + 16
+        ),
+        top: Math.min(
+          typeof window !== "undefined" ? window.innerHeight - 110 : cursor.y,
+          cursor.y + 14
+        ),
+      }}
+      className="fixed z-50 pointer-events-none bg-white/95 backdrop-blur-md rounded-xl border border-[#2d6a3e]/40 shadow-2xl px-3 py-2 space-y-1.5 min-w-[215px]"
+    >
+      {/* Top Row: Source -> Target */}
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <div className="flex items-center gap-1">
+          <span
+            className={`px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase ${sourceMeta.badgeBg}`}
+          >
+            {sourceMeta.label}
+          </span>
+          <span className="font-semibold text-[#526657]">
+            {formatShortDate(draggedCell.sourceDate)}
+          </span>
+        </div>
+
+        <span className="text-xs font-extrabold text-[#141f17] tabular-nums">
+          {formatBRL(draggedCell.amount)}
+        </span>
+      </div>
+
+      {/* Live Target Preview */}
+      {isValidDrop && dragTarget ? (
+        <motion.div
+          key={`${dragTarget.targetDate}_${dragTarget.targetColType}`}
+          initial={{ opacity: 0.6, y: 2 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="pt-1.5 border-t border-[#e4ebe6] space-y-1"
+        >
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <div className="flex items-center gap-1">
+              <ArrowRight className="w-3 h-3 text-[#2d6a3e] shrink-0" />
+              <span
+                className={`px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase ${targetMeta.badgeBg}`}
+              >
+                {targetMeta.label}
+              </span>
+              <span className="font-bold text-[#141f17]">
+                {formatShortDate(dragTarget.targetDate)}
+              </span>
+            </div>
+
+            {isTypeConversion && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-[#2d6a3e] text-white text-[9.5px] font-bold">
+                <ArrowLeftRight className="w-2.5 h-2.5" />
+                <span>Trocar tipo</span>
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] bg-[#eff3f0] px-2 py-1 rounded-lg border border-[#d5ded8] tabular-nums">
+            <span className="text-[#526657] font-medium">
+              {formatBRL(currentTargetAmount)} + {formatBRL(draggedCell.amount)}
+            </span>
+            <span className="font-extrabold text-[#1b5e20]">
+              ➔ {formatBRL(newTargetAmount)}
+            </span>
+          </div>
+        </motion.div>
+      ) : (
+        <div className="pt-1 border-t border-[#e4ebe6] text-[10px] text-[#526657] flex items-center gap-1">
+          <Sparkles className="w-3 h-3 text-[#2d6a3e]" />
+          <span>Solte em outra data ou coluna (Entrada, Saída, Diário)</span>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 interface DesktopMonthColumnProps {
   column: ComputedMonthColumn;
-  onSelectCell: (
-    dateIso: string,
-    colType: "income" | "expense_fixed" | "expense_daily"
+  draggedCell: DraggedCellInfo | null;
+  dragTarget: DragTargetInfo | null;
+  recentlyDropped: {
+    date: string;
+    colType: FieldColumnType;
+    key: number;
+  } | null;
+  emptyDragCanvas: HTMLCanvasElement | null;
+  onDragStartCell: (
+    info: DraggedCellInfo,
+    clientX: number,
+    clientY: number
   ) => void;
+  onDragOverTarget: (
+    target: DragTargetInfo | null,
+    clientX: number,
+    clientY: number
+  ) => void;
+  onDragEndCell: () => void;
+  onDropOnTarget: (
+    info: DraggedCellInfo,
+    targetDate: string,
+    targetColType: FieldColumnType
+  ) => void;
+  onSelectCell: (dateIso: string, colType: FieldColumnType) => void;
 }
 
 function DesktopMonthColumn({
   column,
+  draggedCell,
+  dragTarget,
+  recentlyDropped,
+  emptyDragCanvas,
+  onDragStartCell,
+  onDragOverTarget,
+  onDragEndCell,
+  onDropOnTarget,
   onSelectCell,
 }: DesktopMonthColumnProps) {
   const monthNameOnly = column.title.split(" ")[0];
@@ -450,6 +795,62 @@ function DesktopMonthColumn({
     }
     return slots;
   }, [column.days]);
+
+  function handleCellDragStart(
+    e: React.DragEvent<HTMLDivElement>,
+    info: DraggedCellInfo
+  ) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", JSON.stringify(info));
+    if (emptyDragCanvas) {
+      e.dataTransfer.setDragImage(emptyDragCanvas, 0, 0);
+    }
+    onDragStartCell(info, e.clientX, e.clientY);
+  }
+
+  function handleCellDragOver(
+    e: React.DragEvent<HTMLDivElement>,
+    targetDate: string,
+    targetColType: FieldColumnType
+  ) {
+    if (!draggedCell) return;
+    if (
+      draggedCell.sourceDate === targetDate &&
+      draggedCell.colType === targetColType
+    ) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    onDragOverTarget({ targetDate, targetColType }, e.clientX, e.clientY);
+  }
+
+  function handleCellDrop(
+    e: React.DragEvent<HTMLDivElement>,
+    targetDate: string,
+    targetColType: FieldColumnType
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    let payload = draggedCell;
+    if (!payload) {
+      try {
+        const raw = e.dataTransfer.getData("text/plain");
+        if (raw) payload = JSON.parse(raw) as DraggedCellInfo;
+      } catch {
+        // ignore
+      }
+    }
+    if (
+      payload &&
+      (payload.sourceDate !== targetDate || payload.colType !== targetColType)
+    ) {
+      onDropOnTarget(payload, targetDate, targetColType);
+    } else {
+      onDragEndCell();
+    }
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -476,7 +877,20 @@ function DesktopMonthColumn({
             return <div key={`empty_${idx}`} className="bg-white" />;
           }
 
-          const leftCellsBg = day.isToday
+          const isTargetRow =
+            Boolean(draggedCell) &&
+            dragTarget?.targetDate === day.date &&
+            (draggedCell?.sourceDate !== day.date ||
+              draggedCell?.colType !== dragTarget?.targetColType);
+
+          const isSourceDay = draggedCell?.sourceDate === day.date;
+          const isDraggingSourceCol = isSourceDay ? draggedCell.colType : null;
+          const activeTargetCol =
+            isTargetRow && dragTarget ? dragTarget.targetColType : null;
+
+          const leftCellsBg = isTargetRow
+            ? "bg-[#e3f3e6] font-semibold text-[#0d2614] ring-1 ring-inset ring-[#2d6a3e]/60"
+            : day.isToday
             ? "bg-[#bdd7c5] font-bold text-[#0d2614] ring-1 ring-inset ring-[#2d6a3e]"
             : day.hasSimulation
             ? "bg-[#fdf6e2] text-[#141f17]"
@@ -484,15 +898,29 @@ function DesktopMonthColumn({
             ? "bg-[#dce6df] text-[#1a291e]"
             : "bg-white text-[#141f17]";
 
+          const isRecentlyDroppedCol = (col: FieldColumnType) =>
+            recentlyDropped?.date === day.date &&
+            recentlyDropped?.colType === col;
+
           return (
             <div
               key={day.date}
-              className="grid grid-cols-12 items-stretch text-[11.5px] leading-none tabular-nums select-none"
+              className="grid grid-cols-12 items-stretch text-[11.5px] leading-none tabular-nums select-none transition-colors duration-150"
             >
               {/* Data + Entrada + Saída + Diário container (cols 1-9) */}
-              <div className={`col-span-9 grid grid-cols-9 items-stretch ${leftCellsBg}`}>
-                {/* Data (3 of 9) */}
+              <div
+                className={`col-span-9 grid grid-cols-9 items-stretch transition-colors duration-150 ${leftCellsBg}`}
+              >
+                {/* Data (3 of 9) - dropping on Data keeps the dragged column type */}
                 <div
+                  onDragOver={(e) =>
+                    draggedCell &&
+                    handleCellDragOver(e, day.date, draggedCell.colType)
+                  }
+                  onDrop={(e) =>
+                    draggedCell &&
+                    handleCellDrop(e, day.date, draggedCell.colType)
+                  }
                   onClick={() => onSelectCell(day.date, "expense_daily")}
                   className="col-span-3 text-center flex items-center justify-center gap-1 cursor-pointer hover:bg-black/5 transition-colors"
                 >
@@ -503,19 +931,127 @@ function DesktopMonthColumn({
                 </div>
 
                 {/* Entrada (2 of 9) */}
-                <div
+                <motion.div
+                  animate={{
+                    scale: isRecentlyDroppedCol("income")
+                      ? 1.07
+                      : activeTargetCol === "income"
+                      ? 1.04
+                      : 1,
+                  }}
+                  transition={{ type: "spring", stiffness: 450, damping: 18 }}
+                  draggable={day.incomeTotal > 0}
+                  onDragStart={(e) =>
+                    day.incomeTotal > 0 &&
+                    handleCellDragStart(
+                      e as unknown as React.DragEvent<HTMLDivElement>,
+                      {
+                        sourceDate: day.date,
+                        colType: "income",
+                        amount: day.incomeTotal,
+                      }
+                    )
+                  }
+                  onDragOver={(e) => handleCellDragOver(e, day.date, "income")}
+                  onDrop={(e) => handleCellDrop(e, day.date, "income")}
+                  onDragEnd={onDragEndCell}
                   onClick={() => onSelectCell(day.date, "income")}
-                  className="col-span-2 text-center truncate flex items-center justify-center px-1 cursor-pointer hover:bg-black/8 transition-colors"
+                  title={
+                    day.incomeTotal > 0
+                      ? "Arraste para outra data ou para Saída/Diário (clique para editar)"
+                      : "Clique para lançar ou solte um valor aqui para converter em Entrada"
+                  }
+                  className={`col-span-2 text-center truncate flex items-center justify-center px-1 transition-all duration-150 ${
+                    day.incomeTotal > 0
+                      ? "cursor-grab active:cursor-grabbing hover:bg-[#1b5e20]/10"
+                      : "cursor-pointer hover:bg-black/8"
+                  } ${
+                    isDraggingSourceCol === "income"
+                      ? "opacity-40 scale-95 ring-2 ring-inset ring-dashed ring-[#1b5e20]"
+                      : activeTargetCol === "income"
+                      ? getFieldMeta("income").targetCellClass
+                      : isRecentlyDroppedCol("income")
+                      ? getFieldMeta("income").pulseBg
+                      : isSourceDay && draggedCell
+                      ? "ring-1 ring-inset ring-dashed ring-[#1b5e20]/35"
+                      : ""
+                  }`}
                 >
-                  {day.incomeTotal > 0 ? formatBRL(day.incomeTotal) : ""}
-                </div>
+                  {activeTargetCol === "income" && draggedCell ? (
+                    <span className="truncate">
+                      {formatBRL(
+                        Number(
+                          (day.incomeTotal + draggedCell.amount).toFixed(2)
+                        )
+                      )}
+                    </span>
+                  ) : day.incomeTotal > 0 ? (
+                    formatBRL(day.incomeTotal)
+                  ) : (
+                    ""
+                  )}
+                </motion.div>
 
                 {/* Saída (2 of 9) */}
-                <div
+                <motion.div
+                  animate={{
+                    scale: isRecentlyDroppedCol("expense_fixed")
+                      ? 1.07
+                      : activeTargetCol === "expense_fixed"
+                      ? 1.04
+                      : 1,
+                  }}
+                  transition={{ type: "spring", stiffness: 450, damping: 18 }}
+                  draggable={day.fixedExpenseTotal > 0}
+                  onDragStart={(e) =>
+                    day.fixedExpenseTotal > 0 &&
+                    handleCellDragStart(
+                      e as unknown as React.DragEvent<HTMLDivElement>,
+                      {
+                        sourceDate: day.date,
+                        colType: "expense_fixed",
+                        amount: day.fixedExpenseTotal,
+                      }
+                    )
+                  }
+                  onDragOver={(e) =>
+                    handleCellDragOver(e, day.date, "expense_fixed")
+                  }
+                  onDrop={(e) => handleCellDrop(e, day.date, "expense_fixed")}
+                  onDragEnd={onDragEndCell}
                   onClick={() => onSelectCell(day.date, "expense_fixed")}
-                  className="col-span-2 text-center truncate flex items-center justify-center px-1 cursor-pointer hover:bg-black/8 transition-colors"
+                  title={
+                    day.fixedExpenseTotal > 0
+                      ? "Arraste para outra data ou para Diário/Entrada (clique para editar)"
+                      : "Clique para lançar ou solte um valor aqui para converter em Saída"
+                  }
+                  className={`col-span-2 text-center truncate flex items-center justify-center px-1 transition-all duration-150 ${
+                    day.fixedExpenseTotal > 0
+                      ? "cursor-grab active:cursor-grabbing hover:bg-[#9e1c1c]/10"
+                      : "cursor-pointer hover:bg-black/8"
+                  } ${
+                    isDraggingSourceCol === "expense_fixed"
+                      ? "opacity-40 scale-95 ring-2 ring-inset ring-dashed ring-[#9e1c1c]"
+                      : activeTargetCol === "expense_fixed"
+                      ? getFieldMeta("expense_fixed").targetCellClass
+                      : isRecentlyDroppedCol("expense_fixed")
+                      ? getFieldMeta("expense_fixed").pulseBg
+                      : isSourceDay && draggedCell
+                      ? "ring-1 ring-inset ring-dashed ring-[#9e1c1c]/35"
+                      : ""
+                  }`}
                 >
-                  {day.fixedExpenseTotal > 0 ? (
+                  {activeTargetCol === "expense_fixed" && draggedCell ? (
+                    <span className="truncate">
+                      {formatBRL(
+                        Number(
+                          (day.fixedExpenseTotal + draggedCell.amount).toFixed(
+                            2
+                          )
+                        )
+                      )}
+                    </span>
+                  ) : day.fixedExpenseTotal > 0 ? (
                     <span
                       className={
                         day.simulatedExpenseTotal > 0
@@ -528,21 +1064,85 @@ function DesktopMonthColumn({
                   ) : (
                     ""
                   )}
-                </div>
+                </motion.div>
 
                 {/* Diário (2 of 9) */}
-                <div
+                <motion.div
+                  animate={{
+                    scale: isRecentlyDroppedCol("expense_daily")
+                      ? 1.07
+                      : activeTargetCol === "expense_daily"
+                      ? 1.04
+                      : 1,
+                  }}
+                  transition={{ type: "spring", stiffness: 450, damping: 18 }}
+                  draggable={day.dailyAmount > 0}
+                  onDragStart={(e) =>
+                    day.dailyAmount > 0 &&
+                    handleCellDragStart(
+                      e as unknown as React.DragEvent<HTMLDivElement>,
+                      {
+                        sourceDate: day.date,
+                        colType: "expense_daily",
+                        amount: day.dailyAmount,
+                      }
+                    )
+                  }
+                  onDragOver={(e) =>
+                    handleCellDragOver(e, day.date, "expense_daily")
+                  }
+                  onDrop={(e) => handleCellDrop(e, day.date, "expense_daily")}
+                  onDragEnd={onDragEndCell}
                   onClick={() => onSelectCell(day.date, "expense_daily")}
-                  className="col-span-2 text-center truncate flex items-center justify-center px-1 cursor-pointer hover:bg-black/8 transition-colors"
+                  title={
+                    day.dailyAmount > 0
+                      ? "Arraste para outra data ou para Saída/Entrada (clique para editar)"
+                      : "Clique para lançar ou solte um valor aqui para converter em Diário"
+                  }
+                  className={`col-span-2 text-center truncate flex items-center justify-center px-1 transition-all duration-150 ${
+                    day.dailyAmount > 0
+                      ? "cursor-grab active:cursor-grabbing hover:bg-[#7c5800]/10"
+                      : "cursor-pointer hover:bg-black/8"
+                  } ${
+                    isDraggingSourceCol === "expense_daily"
+                      ? "opacity-40 scale-95 ring-2 ring-inset ring-dashed ring-[#b27d00]"
+                      : activeTargetCol === "expense_daily"
+                      ? getFieldMeta("expense_daily").targetCellClass
+                      : isRecentlyDroppedCol("expense_daily")
+                      ? getFieldMeta("expense_daily").pulseBg
+                      : isSourceDay && draggedCell
+                      ? "ring-1 ring-inset ring-dashed ring-[#b27d00]/35"
+                      : ""
+                  }`}
                 >
-                  {day.dailyAmount > 0 ? formatBRL(day.dailyAmount) : ""}
-                </div>
+                  {activeTargetCol === "expense_daily" && draggedCell ? (
+                    <span className="truncate">
+                      {formatBRL(
+                        Number(
+                          (day.dailyAmount + draggedCell.amount).toFixed(2)
+                        )
+                      )}
+                    </span>
+                  ) : day.dailyAmount > 0 ? (
+                    formatBRL(day.dailyAmount)
+                  ) : (
+                    ""
+                  )}
+                </motion.div>
               </div>
 
               {/* Saldo (cols 10-12) */}
               <div
+                onDragOver={(e) =>
+                  draggedCell &&
+                  handleCellDragOver(e, day.date, draggedCell.colType)
+                }
+                onDrop={(e) =>
+                  draggedCell &&
+                  handleCellDrop(e, day.date, draggedCell.colType)
+                }
                 onClick={() => onSelectCell(day.date, "expense_daily")}
-                className={`col-span-3 flex items-center justify-center font-semibold px-1 truncate cursor-pointer hover:brightness-95 ${day.liquidity.bgClass}`}
+                className={`col-span-3 flex items-center justify-center font-semibold px-1 truncate cursor-pointer hover:brightness-95 transition-colors duration-150 ${day.liquidity.bgClass}`}
               >
                 {formatBRL(day.projectedBalance)}
               </div>

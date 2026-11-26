@@ -172,4 +172,55 @@ describe("CashFlow Engine", () => {
     // Future day without transactions projects the 50.00 dailySpendingTarget
     expect(result.allDaysMap["2026-12-01"].dailyAmount).toBe(50);
   });
+
+  it("supports moving and incrementing Diário, Saída, and Entrada across dates (RN-12)", () => {
+    const result = calculateCashflowProjection({
+      settings: { ...baseSettings, referenceToday: "2026-11-26" },
+      visibleYearMonths: ["2026-10", "2026-11", "2026-12"],
+      transactions: [
+        // Future day 2026-11-27 had its Diário moved to 2026-11-28 (leaving a 0-amount marker on 27/11)
+        {
+          id: "tx_daily_zero_2026-11-27",
+          date: "2026-11-27",
+          type: "expense_daily",
+          amount: 0,
+          description: "Diário movido",
+          paymentMethod: "cash",
+          isSimulation: false,
+          isReconciled: true,
+        },
+        {
+          id: "tx_target_28",
+          date: "2026-11-28",
+          type: "expense_daily",
+          amount: 50,
+          description: "Meta Diária",
+          paymentMethod: "cash",
+          isSimulation: false,
+          isReconciled: true,
+        },
+        {
+          id: "tx_moved_from_27",
+          date: "2026-11-28",
+          type: "expense_daily",
+          amount: 50,
+          description: "Diário (27/11)",
+          paymentMethod: "cash",
+          isSimulation: false,
+          isReconciled: true,
+        },
+      ],
+      dailyOverrides: [],
+      recurringRules: [],
+      recurringOccurrences: [],
+      includeSimulations: true,
+    });
+
+    // Source future day stays at 0 (and does not show dummy 0 item in items list)
+    expect(result.allDaysMap["2026-11-27"].dailyAmount).toBe(0);
+    expect(result.allDaysMap["2026-11-27"].items).toHaveLength(0);
+    // Target future day is incremented to 50 + 50 = 100
+    expect(result.allDaysMap["2026-11-28"].dailyAmount).toBe(100);
+    expect(result.allDaysMap["2026-11-28"].items).toHaveLength(2);
+  });
 });

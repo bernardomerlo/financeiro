@@ -20,6 +20,7 @@ import {
 } from "@/db/schema";
 import {
   calculateCreditCardInstallmentDates,
+  getDaysInMonth,
   getTodayIsoDate,
   type CashflowSettings,
   type TransactionRecord,
@@ -27,6 +28,25 @@ import {
   type RecurringRuleRecord,
   type RecurringOccurrenceRecord,
 } from "@/lib/cashflow-engine";
+import { CATEGORIES, formatShortDate } from "@/lib/format";
+
+function parseStoredTags(rawJson: string | undefined): string[] {
+  if (!rawJson) return [...CATEGORIES];
+  try {
+    const parsed = JSON.parse(rawJson);
+    if (Array.isArray(parsed)) {
+      const cleaned = parsed
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean);
+      if (cleaned.length > 0) {
+        return Array.from(new Set(cleaned));
+      }
+    }
+  } catch {
+    // Fallback to default CATEGORIES
+  }
+  return [...CATEGORIES];
+}
 
 export async function fetchInitialCashflowData(): Promise<{
   settings: CashflowSettings;
@@ -57,6 +77,7 @@ export async function fetchInitialCashflowData(): Promise<{
     creditCardClosingDay: Number(settingsMap.get("credit_card_closing_day") ?? "20"),
     creditCardDueDay: Number(settingsMap.get("credit_card_due_day") ?? "27"),
     referenceToday: getTodayIsoDate(new Date(), process.env.APP_TIMEZONE || undefined),
+    tags: parseStoredTags(settingsMap.get("custom_tags")),
   };
 
   return {
@@ -152,6 +173,13 @@ export async function createRealTransactionAction(payload: CreateTransactionPayl
     createdAt: now,
   }));
 
+  if (payload.type === "expense_daily" && !payload.isSimulation) {
+    await client.execute({
+      sql: `DELETE FROM transactions WHERE date = ? AND type = 'expense_daily' AND amount <= 0`,
+      args: [payload.date],
+    });
+  }
+
   for (const row of rowsToInsert) {
     await db.insert(transactions).values(row);
   }
@@ -159,6 +187,223 @@ export async function createRealTransactionAction(payload: CreateTransactionPayl
   revalidatePath("/");
   revalidatePath("/insights");
   return rowsToInsert;
+}
+
+export async function moveDayFieldTransactionsAction(input: {
+  sourceDate: string;
+  targetDate: string;
+  fieldType: "income" | "expense_fixed" | "expense_daily";
+  targetFieldType?: "income" | "expense_fixed" | "expense_daily";
+}): Promise<{ ok: boolean; movedAmount: number }> {
+  await ensureSchema();
+  const { sourceDate, targetDate, fieldType } = input;
+  const targetType = input.targetFieldType ?? fieldType;
+
+  if (
+    !sourceDate ||
+    !targetDate ||
+    (sourceDate === targetDate && fieldType === targetType)
+  ) {
+    return { ok: true, movedAmount: 0 };
+  }
+
+  const now = new Date().toISOString();
+  const rawSettings = await db.select().from(settings);
+  const settingsMap = new Map(rawSettings.map((s) => [s.key, s.value]));
+  const dailySpendingTarget = Number(
+    settingsMap.get("daily_spending_target") ?? "50.00"
+  );
+  const referenceToday = getTodayIsoDate(
+    new Date(),
+    process.env.APP_TIMEZONE || undefined
+  );
+
+  const allTxs = await db.select().from(transactions);
+  const sourceTxs = allTxs.filter(
+    (t) =>
+      t.date === sourceDate &&
+      t.type === fieldType &&
+      Number(t.isSimulation) === 0
+  );
+  const targetDailyTxs = allTxs.filter(
+    (t) =>
+      t.date === targetDate &&
+      t.type === "expense_daily" &&
+      Number(t.isSimulation) === 0
+  );
+
+  // Check if source actually has anything to move
+  const positiveSourceTxs = sourceTxs.filter((t) => t.amount > 0);
+  const zeroSourceTxs = sourceTxs.filter((t) => t.amount <= 0);
+  const isSourceFutureProjectedDaily =
+    fieldType === "expense_daily" &&
+    positiveSourceTxs.length === 0 &&
+    zeroSourceTxs.length === 0 &&
+    sourceDate > referenceToday;
+
+  // Step 1: If targetType is 'expense_daily', prepare targetDate's Diário column
+  if (targetType === "expense_daily") {
+    const positiveTargetDaily = targetDailyTxs.filter((t) => t.amount > 0);
+    const zeroTargetDaily = targetDailyTxs.filter((t) => t.amount <= 0);
+
+    if (zeroTargetDaily.length > 0) {
+      await client.execute({
+        sql: `DELETE FROM transactions WHERE date = ? AND type = 'expense_daily' AND amount <= 0`,
+        args: [targetDate],
+      });
+    } else if (
+      positiveTargetDaily.length === 0 &&
+      targetDate > referenceToday &&
+      dailySpendingTarget > 0
+    ) {
+      // Materialize target future day's projected Meta Diária so the dropped value increments it
+      await db.insert(transactions).values({
+        id: `tx_${crypto.randomUUID()}`,
+        date: targetDate,
+        type: "expense_daily",
+        amount: dailySpendingTarget,
+        description: "Meta Diária",
+        category: null,
+        paymentMethod: "cash",
+        purchaseDate: targetDate,
+        isSimulation: 0,
+        isReconciled: 1,
+        installmentCurrent: null,
+        installmentTotal: null,
+        installmentGroupId: null,
+        recurringRuleId: null,
+        createdAt: now,
+      });
+    }
+  }
+
+  let movedAmount = 0;
+
+  // Step 2: Move & convert from (sourceDate, fieldType) to (targetDate, targetType)
+  if (fieldType === "expense_daily") {
+    if (positiveSourceTxs.length === 0 && !isSourceFutureProjectedDaily) {
+      return { ok: true, movedAmount: 0 };
+    }
+
+    if (positiveSourceTxs.length > 0) {
+      movedAmount = Number(
+        positiveSourceTxs.reduce((acc, t) => acc + t.amount, 0).toFixed(2)
+      );
+      for (const tx of positiveSourceTxs) {
+        await client.execute({
+          sql: `UPDATE transactions SET date = ?, type = ?, payment_method = 'cash' WHERE id = ?`,
+          args: [targetDate, targetType, tx.id],
+        });
+      }
+    } else if (isSourceFutureProjectedDaily) {
+      movedAmount = dailySpendingTarget;
+      await db.insert(transactions).values({
+        id: `tx_${crypto.randomUUID()}`,
+        date: targetDate,
+        type: targetType,
+        amount: dailySpendingTarget,
+        description: `Diário (${formatShortDate(sourceDate)})`,
+        category: null,
+        paymentMethod: "cash",
+        purchaseDate: targetDate,
+        isSimulation: 0,
+        isReconciled: 1,
+        installmentCurrent: null,
+        installmentTotal: null,
+        installmentGroupId: null,
+        recurringRuleId: null,
+        createdAt: now,
+      });
+    }
+
+    // If sourceDate is a future date, insert a zero-marker transaction so its Diário stays at R$ 0,00
+    if (sourceDate > referenceToday) {
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO transactions (
+          id, date, type, amount, description, category, payment_method, purchase_date,
+          is_simulation, is_reconciled, created_at
+        ) VALUES (?, ?, 'expense_daily', 0, 'Diário movido', NULL, 'cash', ?, 0, 1, ?)`,
+        args: [`tx_daily_zero_${sourceDate}`, sourceDate, sourceDate, now],
+      });
+    }
+  } else {
+    // Source is 'income' (Entrada) or 'expense_fixed' (Saída)
+    if (positiveSourceTxs.length > 0) {
+      movedAmount += positiveSourceTxs.reduce((acc, t) => acc + t.amount, 0);
+      for (const tx of positiveSourceTxs) {
+        const nextMethod =
+          targetType === "expense_fixed" ? tx.paymentMethod || "cash" : "cash";
+        await client.execute({
+          sql: `UPDATE transactions SET date = ?, type = ?, payment_method = ? WHERE id = ?`,
+          args: [targetDate, targetType, nextMethod, tx.id],
+        });
+      }
+    }
+
+    // Also check if any active recurring rule falls on sourceDate for this fieldType
+    const [rawRules, rawOccurrences] = await Promise.all([
+      db.select().from(recurringRules),
+      db.select().from(recurringOccurrences),
+    ]);
+    const [sY, sM, sD] = sourceDate.split("-").map(Number);
+    const sourceYM = sourceDate.slice(0, 7);
+    const daysInSourceMonth = getDaysInMonth(sY, sM);
+    const occMap = new Map(
+      rawOccurrences.map((o) => [`${o.ruleId}_${o.yearMonth}`, o])
+    );
+
+    for (const rule of rawRules) {
+      if (
+        Boolean(rule.isActive) &&
+        rule.type === fieldType &&
+        Math.min(rule.dayOfMonth, daysInSourceMonth) === sD
+      ) {
+        const occKey = `${rule.id}_${sourceYM}`;
+        const occ = occMap.get(occKey);
+        if (occ?.status === "skipped") continue;
+
+        const ruleAmount =
+          occ?.status === "modified" && occ.modifiedAmount != null
+            ? occ.modifiedAmount
+            : rule.amount;
+        movedAmount += ruleAmount;
+
+        await client.execute({
+          sql: `INSERT OR REPLACE INTO recurring_occurrences (id, rule_id, year_month, status, modified_amount)
+                VALUES (?, ?, ?, 'skipped', NULL)`,
+          args: [occKey, rule.id, sourceYM],
+        });
+
+        await db.insert(transactions).values({
+          id: `tx_${crypto.randomUUID()}`,
+          date: targetDate,
+          type: targetType,
+          amount: ruleAmount,
+          description: rule.title,
+          category: rule.category,
+          paymentMethod:
+            targetType === "expense_fixed"
+              ? (rule.paymentMethod as "cash" | "credit_card") || "cash"
+              : "cash",
+          purchaseDate: targetDate,
+          isSimulation: 0,
+          isReconciled: 1,
+          installmentCurrent: null,
+          installmentTotal: null,
+          installmentGroupId: null,
+          recurringRuleId: rule.id,
+          createdAt: now,
+        });
+      }
+    }
+
+    movedAmount = Number(movedAmount.toFixed(2));
+  }
+
+  revalidatePath("/");
+  revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+  return { ok: true, movedAmount };
 }
 
 export async function deleteTransactionAction(id: string) {
@@ -416,6 +661,62 @@ export async function updateSettingsAction(newSettings: Partial<CashflowSettings
 
   revalidatePath("/");
   revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+}
+
+export async function createTagAction(tagName: string): Promise<string[]> {
+  await ensureSchema();
+  const cleaned = tagName.trim().replace(/\s+/g, " ");
+  if (!cleaned) {
+    throw new Error("Informe o nome da tag.");
+  }
+
+  const rawRow = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, "custom_tags"))
+    .limit(1);
+
+  const currentTags = parseStoredTags(rawRow[0]?.value);
+  const exists = currentTags.some(
+    (t) => t.toLowerCase() === cleaned.toLowerCase()
+  );
+
+  const updatedTags = exists ? currentTags : [...currentTags, cleaned];
+
+  await client.execute({
+    sql: `INSERT OR REPLACE INTO settings (key, value) VALUES ('custom_tags', ?)`,
+    args: [JSON.stringify(updatedTags)],
+  });
+
+  revalidatePath("/");
+  revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+  return updatedTags;
+}
+
+export async function deleteTagAction(tagName: string): Promise<string[]> {
+  await ensureSchema();
+  const cleaned = tagName.trim().toLowerCase();
+
+  const rawRow = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, "custom_tags"))
+    .limit(1);
+
+  const currentTags = parseStoredTags(rawRow[0]?.value);
+  const updatedTags = currentTags.filter((t) => t.toLowerCase() !== cleaned);
+
+  await client.execute({
+    sql: `INSERT OR REPLACE INTO settings (key, value) VALUES ('custom_tags', ?)`,
+    args: [JSON.stringify(updatedTags)],
+  });
+
+  revalidatePath("/");
+  revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+  return updatedTags;
 }
 
 export async function upsertRecurringRuleAction(rule: {
@@ -501,6 +802,7 @@ export interface MobileNotificationRecord {
   parsedPaymentMethod: string | null;
   status: "pending" | "processed" | "ignored";
   transactionId: string | null;
+  rawPayload?: string | null;
   createdAt: string;
 }
 
@@ -546,6 +848,7 @@ export async function fetchMobileNotificationsAction(): Promise<
     parsedPaymentMethod: r.parsedPaymentMethod,
     status: (r.status as MobileNotificationRecord["status"]) || "pending",
     transactionId: r.transactionId,
+    rawPayload: r.rawPayload,
     createdAt: r.createdAt,
   }));
 }

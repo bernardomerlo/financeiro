@@ -89,14 +89,32 @@ export async function POST(request: NextRequest) {
       // Fallback: check if query parameters contain a notification payload
       const sp = request.nextUrl.searchParams;
       const queryMsg =
-        sp.get("message") || sp.get("text") || sp.get("not_text");
+        sp.get("message") ||
+        sp.get("notification") ||
+        sp.get("text") ||
+        sp.get("not_text") ||
+        sp.get("title") ||
+        sp.get("not_title");
       if (queryMsg) {
         rawItems = [
           {
-            appPackage: sp.get("appPackage") || sp.get("package") || undefined,
-            appName: sp.get("appName") || sp.get("app") || undefined,
+            appPackage:
+              sp.get("appPackage") ||
+              sp.get("not_app_package") ||
+              sp.get("package") ||
+              undefined,
+            appName:
+              sp.get("appName") ||
+              sp.get("not_app_name") ||
+              sp.get("app") ||
+              undefined,
             title: sp.get("title") || sp.get("not_title") || undefined,
             message: queryMsg,
+            bigText:
+              sp.get("bigText") ||
+              sp.get("not_sub_text") ||
+              sp.get("not_big_text") ||
+              undefined,
             timestamp:
               sp.get("timestamp") || sp.get("not_timestamp") || undefined,
             notificationId:
@@ -108,7 +126,7 @@ export async function POST(request: NextRequest) {
           {
             ok: false,
             error:
-              "Corpo da requisição vazio. Envie um JSON com 'message' (ou 'not_text'), 'title', 'app' e 'timestamp'.",
+              "Corpo da requisição vazio. Envie um JSON com 'message' ('{notification}'), 'title' ('{not_title}'), 'appName' ('{not_app_name}') e 'timestamp'.",
           },
           { status: 400 }
         );

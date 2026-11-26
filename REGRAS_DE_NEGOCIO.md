@@ -35,3 +35,11 @@
   - `R$ 1.000 a R$ 1.499,99`: Crítico (Laranja)
   - `< R$ 1.000`: Perigo (Vermelho)
 - **RN-09 (Cartão de Crédito):** Aplicável apenas a transações do tipo **Saída** (`expense_fixed`). Compras no cartão respeitam o dia de fechamento e o dia de vencimento configurados (compras até o dia de fechamento caem no vencimento do ciclo atual; após o fechamento, deslocam para o próximo mês).
+- **RN-10 (Cadastro e Seleção de Tags / Categorias):** O sistema deve permitir ao usuário cadastrar e remover tags personalizadas (persistidas no banco de dados), além de selecionar ou criar novas tags rapidamente tanto na aprovação de notificações quanto nos modais de lançamento, edição inline e configurações.
+- **RN-11 (Integração MacroDroid e Notificações Bancárias / NuPay):**
+  - No MacroDroid, a variável Magic Text correta para o corpo/texto da notificação é `{notification}` (e `{not_sub_text}` para texto complementar), e para o horário é `{hour}:{minute}:{second}` (não `{not_text}` nem `{hour_00}:{minute_00}:{second_00}`).
+  - O parser deve limpar automaticamente placeholders não expandidos do MacroDroid e suportar notificações de pagamento via NuPay (ex.: `"Pagamento com NuPay aprovado"` / `"R$ 50,42 no débito com NuPay APROVADO em iFood."`), extraindo valor, estabelecimento e sugerindo a tag correspondente.
+- **RN-12 (Drag-and-Drop de Entrada, Saída e Diário entre Datas e Tipos na Tabela):**
+  - Ao arrastar qualquer um dos 3 campos (`Entrada`, `Saída` ou `Diário`) de uma data de origem (`sourceDate`) e soltar em outra data (`targetDate`) e/ou em outra coluna (`Entrada`, `Saída` ou `Diário`):
+    - As transações daquele campo na data de origem são movidas para a data de destino e convertidas para o tipo da coluna de destino (`Diário` ↔ `Saída` ↔ `Entrada`), zerando o campo na origem (inclusive mantendo `R$ 0,00` caso a origem seja um dia futuro de `Diário`) e **incrementando (somando)** ao valor já existente na coluna de destino.
+    - Também é permitido arrastar entre colunas do **mesmo dia** (ex.: converter o `Diário` de um dia diretamente em `Saída` ou `Entrada`, e vice-versa).

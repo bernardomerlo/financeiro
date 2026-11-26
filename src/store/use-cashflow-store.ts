@@ -12,6 +12,7 @@ import {
   type RecurringRuleRecord,
   type TransactionRecord,
 } from "@/lib/cashflow-engine";
+import { CATEGORIES } from "@/lib/format";
 
 interface CashflowState {
   isHydrated: boolean;
@@ -79,11 +80,18 @@ interface CashflowState {
   applyTemporaryDailyTargetInMemory: (newTarget: number, startDate: string, endDate: string) => void;
 
   // Direct DB state sync helpers
+  moveDayFieldOptimistic: (
+    sourceDate: string,
+    targetDate: string,
+    fieldType: "income" | "expense_fixed" | "expense_daily",
+    targetFieldType?: "income" | "expense_fixed" | "expense_daily"
+  ) => void;
   addCommittedTransactions: (txs: TransactionRecord[]) => void;
   removeCommittedTransaction: (id: string) => void;
   upsertCommittedDailyOverride: (override: DailyOverrideRecord) => void;
   removeCommittedDailyOverride: (date: string) => void;
   updateLocalSettings: (partial: Partial<CashflowSettings>) => void;
+  setLocalTags: (tags: string[]) => void;
   upsertLocalRecurringRule: (rule: RecurringRuleRecord) => void;
   removeLocalRecurringRule: (id: string) => void;
   upsertLocalRecurringOccurrence: (occ: RecurringOccurrenceRecord) => void;
@@ -116,6 +124,7 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
     creditCardClosingDay: 20,
     creditCardDueDay: 27,
     referenceToday: initialTodayIso,
+    tags: [...CATEGORIES],
   },
   centerYearMonth: initialTodayIso.slice(0, 7),
   dbTransactions: [],
@@ -321,6 +330,148 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
       };
     }),
 
+  moveDayFieldOptimistic: (sourceDate, targetDate, fieldType, targetFieldType) =>
+    set((state) => {
+      const targetType = targetFieldType ?? fieldType;
+      if (
+        !sourceDate ||
+        !targetDate ||
+        (sourceDate === targetDate && fieldType === targetType)
+      ) {
+        return state;
+      }
+
+      const { settings } = state;
+      const referenceToday = settings.referenceToday;
+      const dailyTarget = settings.dailySpendingTarget;
+
+      // Move & convert any in-memory staged transactions from (sourceDate, fieldType) to (targetDate, targetType)
+      const nextStagedTxs = state.stagedTransactions.map((t) =>
+        t.date === sourceDate && t.type === fieldType
+          ? {
+              ...t,
+              date: targetDate,
+              type: targetType,
+              paymentMethod:
+                targetType === "expense_fixed" ? t.paymentMethod : "cash",
+            }
+          : t
+      );
+
+      let nextDbTxs = [...state.dbTransactions];
+
+      const sourceTxs = nextDbTxs.filter(
+        (t) => t.date === sourceDate && t.type === fieldType
+      );
+      const positiveSourceIds = new Set(
+        sourceTxs.filter((t) => t.amount > 0).map((t) => t.id)
+      );
+      const zeroSourceTxs = sourceTxs.filter((t) => t.amount <= 0);
+      const isSourceFutureProjectedDaily =
+        fieldType === "expense_daily" &&
+        positiveSourceIds.size === 0 &&
+        zeroSourceTxs.length === 0 &&
+        sourceDate > referenceToday;
+
+      // Step 1: Prepare targetDate if targetType is 'expense_daily'
+      if (targetType === "expense_daily") {
+        const targetDailyTxs = nextDbTxs.filter(
+          (t) => t.date === targetDate && t.type === "expense_daily"
+        );
+        const positiveTargetDaily = targetDailyTxs.filter((t) => t.amount > 0);
+        const zeroTargetDaily = targetDailyTxs.filter((t) => t.amount <= 0);
+
+        if (zeroTargetDaily.length > 0) {
+          nextDbTxs = nextDbTxs.filter(
+            (t) =>
+              !(
+                t.date === targetDate &&
+                t.type === "expense_daily" &&
+                t.amount <= 0
+              )
+          );
+        } else if (
+          positiveTargetDaily.length === 0 &&
+          targetDate > referenceToday &&
+          dailyTarget > 0
+        ) {
+          nextDbTxs.push({
+            id: `tx_opt_target_${targetDate}_${Date.now()}`,
+            date: targetDate,
+            type: "expense_daily",
+            amount: dailyTarget,
+            description: "Meta Diária",
+            category: null,
+            paymentMethod: "cash",
+            purchaseDate: targetDate,
+            isSimulation: false,
+            isReconciled: true,
+          });
+        }
+      }
+
+      // Step 2: Move & convert source transactions
+      if (fieldType === "expense_daily") {
+        if (positiveSourceIds.size > 0) {
+          nextDbTxs = nextDbTxs.map((t) =>
+            positiveSourceIds.has(t.id)
+              ? {
+                  ...t,
+                  date: targetDate,
+                  type: targetType,
+                  paymentMethod: "cash",
+                }
+              : t
+          );
+        } else if (isSourceFutureProjectedDaily) {
+          nextDbTxs.push({
+            id: `tx_opt_move_${sourceDate}_${Date.now()}`,
+            date: targetDate,
+            type: targetType,
+            amount: dailyTarget,
+            description: "Meta Diária",
+            category: null,
+            paymentMethod: "cash",
+            purchaseDate: targetDate,
+            isSimulation: false,
+            isReconciled: true,
+          });
+        }
+
+        if (sourceDate > referenceToday) {
+          nextDbTxs.push({
+            id: `tx_daily_zero_${sourceDate}`,
+            date: sourceDate,
+            type: "expense_daily",
+            amount: 0,
+            description: "Diário movido",
+            category: null,
+            paymentMethod: "cash",
+            purchaseDate: sourceDate,
+            isSimulation: false,
+            isReconciled: true,
+          });
+        }
+      } else {
+        nextDbTxs = nextDbTxs.map((t) =>
+          positiveSourceIds.has(t.id)
+            ? {
+                ...t,
+                date: targetDate,
+                type: targetType,
+                paymentMethod:
+                  targetType === "expense_fixed" ? t.paymentMethod : "cash",
+              }
+            : t
+        );
+      }
+
+      return {
+        dbTransactions: nextDbTxs,
+        stagedTransactions: nextStagedTxs,
+      };
+    }),
+
   addCommittedTransactions: (txs) =>
     set((state) => ({
       dbTransactions: [...state.dbTransactions, ...txs],
@@ -349,6 +500,11 @@ export const useCashflowStore = create<CashflowState>((set, get) => ({
   updateLocalSettings: (partial) =>
     set((state) => ({
       settings: { ...state.settings, ...partial },
+    })),
+
+  setLocalTags: (tags) =>
+    set((state) => ({
+      settings: { ...state.settings, tags },
     })),
 
   upsertLocalRecurringRule: (rule) =>

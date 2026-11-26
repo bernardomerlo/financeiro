@@ -159,7 +159,7 @@ export function TopNavbar({
           <nav className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
             {[
               { href: "/", label: "Fluxo", icon: Table2 },
-              { href: "/insights", label: "Metas", icon: BarChart3 },
+              { href: "/insights", label: "Dashboards", icon: BarChart3 },
               { href: "/notificacoes", label: "Notificações", icon: Bell },
             ].map((tab) => {
               const isActive = pathname === tab.href;
