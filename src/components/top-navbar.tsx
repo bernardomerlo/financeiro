@@ -16,6 +16,7 @@ import {
   Download,
   Command,
   Lock,
+  Bell,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCashflowStore } from "@/store/use-cashflow-store";
@@ -173,6 +174,19 @@ export function TopNavbar({
         </Link>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          <Link
+            href="/notificacoes"
+            className={`w-9 h-9 rounded-lg border flex items-center justify-center relative ${
+              pathname === "/notificacoes"
+                ? "border-[#2d6a3e] bg-[#e8f5e9] text-[#1b5e20]"
+                : "border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153]"
+            }`}
+            aria-label="Validar Notificações"
+            title="Validar Notificações"
+          >
+            <Bell className="w-4 h-4 text-[#2d6a3e]" />
+          </Link>
+
           {pathname !== "/insights" ? (
             <Link
               href="/insights"
@@ -222,6 +236,7 @@ export function TopNavbar({
             {[
               { href: "/", label: "Fluxo", icon: Table2 },
               { href: "/insights", label: "Metas", icon: BarChart3 },
+              { href: "/notificacoes", label: "Notificações", icon: Bell },
             ].map((tab) => {
               const isActive = pathname === tab.href;
               const Icon = tab.icon;

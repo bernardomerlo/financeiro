@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { client, db, ensureSchema } from "@/db";
 import {
   AUTH_COOKIE_NAME,
@@ -16,6 +16,7 @@ import {
   dailyOverrides,
   recurringRules,
   recurringOccurrences,
+  mobileNotifications,
 } from "@/db/schema";
 import {
   calculateCreditCardInstallmentDates,
@@ -332,4 +333,254 @@ export async function loginWithPasswordAction(password: string): Promise<{
 export async function logoutAction() {
   const cookieStore = await cookies();
   cookieStore.delete(AUTH_COOKIE_NAME);
+}
+
+export interface MobileNotificationRecord {
+  id: string;
+  fingerprint: string;
+  appPackage: string | null;
+  appName: string | null;
+  title: string | null;
+  message: string;
+  originalTimestamp: string;
+  eventDate: string;
+  detectedType: "outgoing" | "incoming" | "ignored";
+  parsedAmount: number | null;
+  parsedMerchant: string | null;
+  parsedPaymentMethod: string | null;
+  status: "pending" | "processed" | "ignored";
+  transactionId: string | null;
+  createdAt: string;
+}
+
+export type NotificationApprovalTarget =
+  | "daily_add"
+  | "daily_set"
+  | "expense_fixed"
+  | "income";
+
+export interface ApproveNotificationInput {
+  id: string;
+  amount: number;
+  date: string; // 'YYYY-MM-DD'
+  targetMode: NotificationApprovalTarget;
+  description?: string;
+  category?: string;
+  paymentMethod?: "cash" | "credit_card";
+  installments?: number;
+}
+
+export async function fetchMobileNotificationsAction(): Promise<
+  MobileNotificationRecord[]
+> {
+  await ensureSchema();
+  const rows = await db
+    .select()
+    .from(mobileNotifications)
+    .orderBy(desc(mobileNotifications.originalTimestamp))
+    .limit(120);
+
+  return rows.map((r) => ({
+    id: r.id,
+    fingerprint: r.fingerprint,
+    appPackage: r.appPackage,
+    appName: r.appName,
+    title: r.title,
+    message: r.message,
+    originalTimestamp: r.originalTimestamp,
+    eventDate: r.eventDate,
+    detectedType: (r.detectedType as MobileNotificationRecord["detectedType"]) || "outgoing",
+    parsedAmount: r.parsedAmount,
+    parsedMerchant: r.parsedMerchant,
+    parsedPaymentMethod: r.parsedPaymentMethod,
+    status: (r.status as MobileNotificationRecord["status"]) || "pending",
+    transactionId: r.transactionId,
+    createdAt: r.createdAt,
+  }));
+}
+
+async function processSingleNotificationApproval(
+  input: ApproveNotificationInput,
+  settingsMap: Map<string, string>
+): Promise<{ ok: boolean; skipped?: boolean; transactionId?: string }> {
+  const existingNotif = await db
+    .select()
+    .from(mobileNotifications)
+    .where(eq(mobileNotifications.id, input.id))
+    .limit(1);
+
+  if (!existingNotif[0] || existingNotif[0].status === "processed") {
+    return { ok: true, skipped: true };
+  }
+
+  const cleanAmount = Number(Math.max(0, input.amount).toFixed(2));
+  if (cleanAmount <= 0) {
+    throw new Error("O valor para aprovação deve ser maior que zero.");
+  }
+
+  const defaultDailyTarget = Number(
+    settingsMap.get("daily_spending_target") ?? "50.00"
+  );
+  const closingDay = Number(
+    settingsMap.get("credit_card_closing_day") ?? "20"
+  );
+  const dueDay = Number(settingsMap.get("credit_card_due_day") ?? "27");
+
+  let linkedTxId = `daily_${input.date}`;
+
+  if (input.targetMode === "daily_add" || input.targetMode === "daily_set") {
+    const existingOvRows = await db
+      .select()
+      .from(dailyOverrides)
+      .where(eq(dailyOverrides.date, input.date))
+      .limit(1);
+
+    const currentBase = existingOvRows[0]
+      ? existingOvRows[0].amount
+      : defaultDailyTarget;
+
+    const nextAmount =
+      input.targetMode === "daily_add"
+        ? Number((currentBase + cleanAmount).toFixed(2))
+        : cleanAmount;
+
+    const existingNote = existingOvRows[0]?.note;
+    const nextNote = input.description
+      ? existingNote
+        ? `${existingNote} | ${input.description}`
+        : input.description
+      : existingNote ?? null;
+
+    await client.execute({
+      sql: `INSERT OR REPLACE INTO daily_overrides (date, amount, note, is_reconciled) VALUES (?, ?, ?, 1)`,
+      args: [input.date, nextAmount, nextNote],
+    });
+  } else {
+    // 'expense_fixed' (Saída) or 'income' (Entrada)
+    const now = new Date().toISOString();
+    const effectivePaymentMethod =
+      input.targetMode === "income"
+        ? "cash"
+        : input.paymentMethod ?? "cash";
+    const installmentsCount =
+      effectivePaymentMethod === "credit_card"
+        ? Math.max(1, input.installments ?? 1)
+        : 1;
+
+    const targetDates =
+      effectivePaymentMethod === "credit_card"
+        ? calculateCreditCardInstallmentDates(
+            input.date,
+            installmentsCount,
+            closingDay,
+            dueDay
+          )
+        : [input.date];
+
+    const perInstallmentAmount = Number(
+      (cleanAmount / installmentsCount).toFixed(2)
+    );
+    const groupId =
+      installmentsCount > 1 ? `grp_${crypto.randomUUID()}` : null;
+
+    for (let idx = 0; idx < targetDates.length; idx++) {
+      const txId = `tx_${crypto.randomUUID()}`;
+      if (idx === 0) linkedTxId = txId;
+      await db.insert(transactions).values({
+        id: txId,
+        date: targetDates[idx],
+        type: input.targetMode,
+        amount: perInstallmentAmount,
+        description: input.description || null,
+        category: input.category || null,
+        paymentMethod: effectivePaymentMethod,
+        purchaseDate: input.date,
+        isSimulation: 0,
+        isReconciled: 1,
+        installmentCurrent: installmentsCount > 1 ? idx + 1 : null,
+        installmentTotal: installmentsCount > 1 ? installmentsCount : null,
+        installmentGroupId: groupId,
+        recurringRuleId: null,
+        createdAt: now,
+      });
+    }
+  }
+
+  await client.execute({
+    sql: `UPDATE mobile_notifications SET status = 'processed', transaction_id = ? WHERE id = ?`,
+    args: [linkedTxId, input.id],
+  });
+
+  return { ok: true, transactionId: linkedTxId };
+}
+
+export async function approveNotificationAction(
+  input: ApproveNotificationInput
+) {
+  await ensureSchema();
+  const rawSettings = await db.select().from(settings);
+  const settingsMap = new Map(rawSettings.map((s) => [s.key, s.value]));
+
+  const res = await processSingleNotificationApproval(input, settingsMap);
+
+  revalidatePath("/");
+  revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+  return res;
+}
+
+export async function approveAllNotificationsAction(
+  inputs: ApproveNotificationInput[]
+) {
+  await ensureSchema();
+  const rawSettings = await db.select().from(settings);
+  const settingsMap = new Map(rawSettings.map((s) => [s.key, s.value]));
+
+  let approvedCount = 0;
+  for (const item of inputs) {
+    const res = await processSingleNotificationApproval(item, settingsMap);
+    if (res.ok && !res.skipped) {
+      approvedCount++;
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath("/insights");
+  revalidatePath("/notificacoes");
+  return { ok: true, approvedCount };
+}
+
+export async function rejectNotificationAction(id: string) {
+  await ensureSchema();
+  await client.execute({
+    sql: `UPDATE mobile_notifications SET status = 'ignored' WHERE id = ?`,
+    args: [id],
+  });
+  revalidatePath("/");
+  revalidatePath("/notificacoes");
+  return { ok: true };
+}
+
+export async function rejectAllNotificationsAction(ids: string[]) {
+  await ensureSchema();
+  for (const id of ids) {
+    await client.execute({
+      sql: `UPDATE mobile_notifications SET status = 'ignored' WHERE id = ?`,
+      args: [id],
+    });
+  }
+  revalidatePath("/");
+  revalidatePath("/notificacoes");
+  return { ok: true, rejectedCount: ids.length };
+}
+
+export async function reopenNotificationAction(id: string) {
+  await ensureSchema();
+  await client.execute({
+    sql: `UPDATE mobile_notifications SET status = 'pending' WHERE id = ?`,
+    args: [id],
+  });
+  revalidatePath("/");
+  revalidatePath("/notificacoes");
+  return { ok: true };
 }

@@ -9,6 +9,7 @@ import {
   PlusCircle,
   CalendarDays,
   CalendarClock,
+  Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashflowStore } from "@/store/use-cashflow-store";
@@ -30,6 +31,8 @@ import { DayDetailDrawer } from "./day-detail-drawer";
 import { SimulationFloatingBar } from "./simulation-floating-bar";
 import { SettingsAndRecurringModals } from "./settings-and-recurring-modals";
 import { MobileQuickEntry } from "./mobile-quick-entry";
+import { NotificationsValidator } from "./notifications-validator";
+import { fetchMobileNotificationsAction } from "@/app/actions";
 
 interface CashflowDashboardClientProps {
   initialData: {
@@ -61,12 +64,23 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
     setRecurringModalOpen,
   } = useCashflowStore();
 
-  const [mobileTab, setMobileTab] = useState<"launch" | "month">("launch");
+  const [mobileTab, setMobileTab] = useState<"launch" | "notifications" | "month">("launch");
   const [showPastMobileDays, setShowPastMobileDays] = useState(false);
+  const [pendingNotifCount, setPendingNotifCount] = useState(0);
 
   useEffect(() => {
     hydrateFromServer(initialData);
   }, [initialData, hydrateFromServer]);
+
+  useEffect(() => {
+    fetchMobileNotificationsAction()
+      .then((list) => {
+        setPendingNotifCount(list.filter((n) => n.status === "pending").length);
+      })
+      .catch(() => {
+        // ignore
+      });
+  }, []);
 
   const activeSettings = isHydrated ? settings : initialData.settings;
   const activeCenterYM = isHydrated
@@ -188,8 +202,26 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
         </div>
       </main>
 
-      {/* MOBILE VIEW: Quick Entry Hub (default) + Monthly Statement tab */}
+      {/* MOBILE VIEW: Quick Entry Hub (default) + Notifications Validator + Monthly Statement tab */}
       <main className="flex lg:hidden flex-col flex-1 px-3 py-3 gap-3 pb-24">
+        {mobileTab === "launch" && pendingNotifCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setMobileTab("notifications")}
+            className="w-full p-2.5 rounded-xl bg-[#e8f5e9] border border-[#2d6a3e] text-[#141f17] flex items-center justify-between gap-2 shadow-2xs active:scale-[0.99] cursor-pointer"
+          >
+            <div className="flex items-center gap-2 text-xs font-bold text-[#1b5e20]">
+              <Bell className="w-4 h-4 shrink-0" />
+              <span>
+                {pendingNotifCount} notificação(ões) do celular aguardando aprovação
+              </span>
+            </div>
+            <span className="px-2.5 py-1 rounded-lg bg-[#2d6a3e] text-white text-[11px] font-bold shrink-0">
+              Validar →
+            </span>
+          </button>
+        )}
+
         {mobileTab === "launch" ? (
           <MobileQuickEntry
             currentBalance={currentBalance}
@@ -199,6 +231,13 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
             allDaysMap={projection.allDaysMap}
             transactions={mergedTransactions}
             dailyOverrides={mergedOverrides}
+          />
+        ) : mobileTab === "notifications" ? (
+          <NotificationsValidator
+            allDaysMap={projection.allDaysMap}
+            dailyOverrides={mergedOverrides}
+            settings={activeSettings}
+            onPendingCountChange={setPendingNotifCount}
           />
         ) : (
           <>
@@ -318,7 +357,7 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
           aria-label="Navegação mobile"
           className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-[#cfd8d2] px-2 pt-1.5 pb-safe z-30 shadow-[0_-2px_10px_rgba(20,31,23,0.06)]"
         >
-          <div className="grid grid-cols-3 gap-1 pb-1.5">
+          <div className="grid grid-cols-4 gap-1 pb-1.5">
             <button
               type="button"
               onClick={() => setMobileTab("launch")}
@@ -330,6 +369,26 @@ export function CashflowDashboardClient({ initialData }: CashflowDashboardClient
             >
               <PlusCircle className="w-5 h-5" />
               <span>Lançar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileTab("notifications")}
+              className={`relative min-h-[48px] rounded-xl flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors cursor-pointer ${
+                mobileTab === "notifications"
+                  ? "bg-[#e8f5e9] text-[#2d6a3e]"
+                  : "text-[#4e6153] active:bg-[#eff3f0]"
+              }`}
+            >
+              <div className="relative">
+                <Bell className="w-5 h-5" />
+                {pendingNotifCount > 0 && (
+                  <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    {pendingNotifCount}
+                  </span>
+                )}
+              </div>
+              <span>Notificações</span>
             </button>
 
             <button
