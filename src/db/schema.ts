@@ -48,3 +48,22 @@ export const recurringOccurrences = sqliteTable("recurring_occurrences", {
   status: text("status").notNull(), // 'confirmed' | 'skipped' | 'modified'
   modifiedAmount: real("modified_amount"),
 });
+
+export const mobileNotifications = sqliteTable("mobile_notifications", {
+  id: text("id").primaryKey(),
+  fingerprint: text("fingerprint").notNull().unique(),
+  appPackage: text("app_package"),
+  appName: text("app_name"),
+  title: text("title"),
+  message: text("message").notNull(),
+  originalTimestamp: text("original_timestamp").notNull(),
+  eventDate: text("event_date").notNull(), // 'YYYY-MM-DD'
+  detectedType: text("detected_type").notNull(), // 'outgoing' | 'incoming' | 'ignored'
+  parsedAmount: real("parsed_amount"),
+  parsedMerchant: text("parsed_merchant"),
+  parsedPaymentMethod: text("parsed_payment_method"), // 'debit' | 'pix' | 'credit_card' | 'transfer' | 'bill' | 'unknown'
+  status: text("status").default("pending").notNull(), // 'pending' | 'processed' | 'ignored'
+  transactionId: text("transaction_id"),
+  rawPayload: text("raw_payload"),
+  createdAt: text("created_at").notNull(),
+});

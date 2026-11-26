@@ -59,6 +59,27 @@ export async function ensureSchema() {
         status TEXT NOT NULL,
         modified_amount REAL
       )`,
+      `CREATE TABLE IF NOT EXISTS mobile_notifications (
+        id TEXT PRIMARY KEY,
+        fingerprint TEXT NOT NULL UNIQUE,
+        app_package TEXT,
+        app_name TEXT,
+        title TEXT,
+        message TEXT NOT NULL,
+        original_timestamp TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        detected_type TEXT NOT NULL,
+        parsed_amount REAL,
+        parsed_merchant TEXT,
+        parsed_payment_method TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        transaction_id TEXT,
+        raw_payload TEXT,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_mobile_notifications_fingerprint ON mobile_notifications(fingerprint)`,
+      `CREATE INDEX IF NOT EXISTS idx_mobile_notifications_status ON mobile_notifications(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_mobile_notifications_event_date ON mobile_notifications(event_date)`,
     ],
     "write"
   );
