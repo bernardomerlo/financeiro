@@ -143,12 +143,14 @@ export async function POST(request: NextRequest) {
     const nowIso = new Date().toISOString();
     let insertedCount = 0;
     let duplicateCount = 0;
+    let ignoredCount = 0;
     let outgoingDetectedCount = 0;
 
     const results: Array<{
       id: string;
       fingerprint: string;
       duplicate: boolean;
+      ignored?: boolean;
       appPackage: string | null;
       appName: string | null;
       title: string | null;
@@ -167,6 +169,32 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < rawItems.length; i++) {
       try {
         const normalized = normalizeSingleNotification(rawItems[i]);
+
+        // Skip persisting notifications that do not represent a completed transaction
+        // (e.g., declined purchases, coupons/promotions, OTP codes, invoice reminders).
+        // Still return HTTP 200 so MacroDroid marks the webhook as delivered.
+        if (normalized.detectedType === "ignored") {
+          ignoredCount++;
+          results.push({
+            id: `ignored_${normalized.fingerprint}`,
+            fingerprint: normalized.fingerprint,
+            duplicate: false,
+            ignored: true,
+            appPackage: normalized.appPackage,
+            appName: normalized.appName,
+            title: normalized.title,
+            message: normalized.message,
+            originalTimestamp: normalized.originalTimestamp,
+            eventDate: normalized.eventDate,
+            detectedType: normalized.detectedType,
+            parsedAmount: normalized.parsedAmount,
+            parsedMerchant: normalized.parsedMerchant,
+            parsedPaymentMethod: normalized.parsedPaymentMethod,
+            status: "ignored",
+          });
+          continue;
+        }
+
         const newId = `notif_${crypto.randomUUID()}`;
 
         // Atomic idempotent insert: if fingerprint already exists, SQLite ignores the insert
@@ -278,6 +306,7 @@ export async function POST(request: NextRequest) {
           received: rawItems.length,
           inserted: insertedCount,
           duplicates: duplicateCount,
+          ignored: ignoredCount,
           outgoingDetected: outgoingDetectedCount,
           errors: errors.length,
         },

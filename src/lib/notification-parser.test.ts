@@ -42,12 +42,24 @@ describe("notification-parser & idempotency", () => {
     expect(credit.parsedPaymentMethod).toBe("credit_card");
   });
 
-  it("ignores declined purchases, OTP codes, and invoice reminders", () => {
+  it("ignores declined purchases, promotional coupons, OTP codes, and invoice reminders", () => {
     const declined = parseBrazilianBankNotification(
       "Compra recusada",
       "Compra de R$ 45,90 negada no cartão de débito"
     );
     expect(declined.detectedType).toBe("ignored");
+
+    const declinedCreditNubank = parseBrazilianBankNotification(
+      "Compra no crédito negada",
+      "Compra de R$ 7,95 NEGADA em IFD*IFOOD CLUB para o cartão com final 3783, mas você pode aumentar seu limite pelo app."
+    );
+    expect(declinedCreditNubank.detectedType).toBe("ignored");
+
+    const promoCouponNubank = parseBrazilianBankNotification(
+      "Black Friday Shopee com R$20 OFF",
+      "Resgate seu cupom exclusivo e ganhe R$ 20 de desconto em compras a partir de R$ 59 pagando com seu cartão Nubank."
+    );
+    expect(promoCouponNubank.detectedType).toBe("ignored");
 
     const otp = parseBrazilianBankNotification(
       "Código de segurança",

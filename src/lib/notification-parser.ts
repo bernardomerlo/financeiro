@@ -518,16 +518,22 @@ export function parseBrazilianBankNotification(
   const lower = combined.toLowerCase();
   const parsedAmount = extractBrlAmount(combined);
 
-  // 1. Check ignored / non-disbursement alerts first (declined purchases, OTP tokens, invoice alerts)
+  // 1. Check ignored / non-disbursement alerts first (declined purchases, promotions/coupons, OTP tokens, invoice alerts)
   const ignoredPatterns = [
-    /compra\s+(?:negada|recusada|cancelada|n[aã]o\s+autorizada)/i,
-    /transa[cç][aã]o\s+(?:negada|recusada|cancelada|n[aã]o\s+autorizada)/i,
-    /pagamento\s+(?:com\s+nupay\s+)?(?:negado|recusado|cancelado|n[aã]o\s+autorizado)/i,
-    /pix\s+(?:agendado|cancelado|recusado|n[aã]o\s+realizado)/i,
-    /c[oó]digo\s+de\s+(?:verifica[cç][aã]o|seguran[cç]a|acesso)/i,
-    /fatura\s+(?:fechou|fechada|vence|dispon[ií]vel)/i,
-    /limite\s+dispon[ií]vel/i,
-    /estorno\s+de\s+compra/i,
+    /\b(?:negad[oa]s?|recusad[oa]s?|cancelad[oa]s?|estornad[oa]s?)\b/i,
+    /\bn[aã]o\s+(?:foi\s+)?(?:autorizad[oa]|aprovad[oa]|realizad[oa]|conclu[ií]d[oa]|efetuad[oa]|processad[oa])\b/i,
+    /\b(?:saldo|limite)\s+insuficiente\b/i,
+    /\btentativa\s+de\s+compra\b/i,
+    /\bc[oó]digo\s+de\s+(?:verifica[cç][aã]o|seguran[cç]a|acesso)\b/i,
+    /\bfatura\s+(?:fechou|fechada|vence|dispon[ií]vel|aberta|em\s+atraso)\b/i,
+    /\blimite\s+dispon[ií]vel\b/i,
+    /\b(?:aumentar\s+seu\s+limite|aumento\s+de\s+limite|novo\s+limite)\b/i,
+    /\bestorno\s+de\s+compra\b/i,
+    /\b(?:pix|pagamento|transfer[eê]ncia)\s+agendad[oa]\b/i,
+    // Marketing, coupons, cashback & promotional notifications
+    /\b(?:cupom|cupons|desconto|descontos|black\s+friday|oferta|ofertas|promo[cç][aã]o|promo[cç][oõ]es|cashback|sorteio|concorra)\b/i,
+    /\b(?:resgate\s+seu|ganhe\s+r\$|indique\s+e\s+ganhe|compras\s+a\s+partir\s+de|pagando\s+com\s+seu\s+cart[aã]o|simule\s+seu|empr[eé]stimo\s+dispon[ií]vel)\b/i,
+    /\b(?:\d+%\s*off|r\$\s*\d+(?:[.,]\d+)?\s*off)\b/i,
   ];
 
   for (const pat of ignoredPatterns) {
@@ -608,13 +614,8 @@ export function parseBrazilianBankNotification(
     };
   }
 
-  // Also treat notifications from bank/wallet with a valid amount + "aprovado(a)" or "no débito/crédito" as outgoing
-  if (
-    parsedAmount !== null &&
-    (/\baprovad[oa]\b/i.test(lower) ||
-      /\bno\s+d[eé]bito\b/i.test(lower) ||
-      /\bno\s+cr[eé]dito\b/i.test(lower))
-  ) {
+  // Also treat notifications from bank/wallet with a valid amount + "aprovado(a)" as outgoing
+  if (parsedAmount !== null && /\baprovad[oa]\b/i.test(lower)) {
     return {
       detectedType: "outgoing",
       parsedAmount,
@@ -639,11 +640,11 @@ function extractMerchantOrPeer(
     direction === "outgoing"
       ? [
           // "R$ 50,42 no débito com NuPay APROVADO em iFood." / "Compra de R$ 45,90 aprovada em PADARIA CENTRAL no débito"
-          /\b(?:aprovad[oa]\s+em|compra\s+em|realizad[oa]\s+em|confirmad[oa]\s+em|pagamento\s+em|estabelecimento:?)\s+([A-Za-z0-9À-ú][A-Za-z0-9À-ú\s.*&/_-]{1,48}?)(?=\s+(?:no\s+valor|de\s+R\$|por\s+R\$|no\s+d[eé]bito|no\s+cr[eé]dito|com\s+o?\s*cart[aã]o|com\s+nupay|usando|em\s+\d{1,2}[/.-]\d{1,2}|\s+às\s+\d)|[.!,\n]|$)/i,
+          /\b(?:aprovad[oa]\s+em|compra\s+em|realizad[oa]\s+em|confirmad[oa]\s+em|pagamento\s+em|estabelecimento:?)\s+([A-Za-z0-9À-ú][A-Za-z0-9À-ú\s.*&/_-]{1,48}?)(?=\s+(?:no\s+valor|de\s+R\$|por\s+R\$|no\s+d[eé]bito|no\s+cr[eé]dito|para\s+o\s+cart[aã]o|com\s+o?\s*cart[aã]o|com\s+nupay|usando|em\s+\d{1,2}[/.-]\d{1,2}|\s+às\s+\d)|[.!,\n]|$)/i,
           // "Pix enviado de R$ 50,00 para JOAO SILVA"
-          /\b(?:para|favorecido:?)\s+([A-Za-z0-9À-ú][A-Za-z0-9À-ú\s.*&/_-]{1,48}?)(?=\s+(?:no\s+valor|de\s+R\$|em\s+\d{1,2}[/.-]\d{1,2})|[.!,\n]|$)/i,
+          /\b(?:para|favorecido:?)\s+(?!o\s+cart[aã]o\b)([A-Za-z0-9À-ú][A-Za-z0-9À-ú\s.*&/_-]{1,48}?)(?=\s+(?:no\s+valor|de\s+R\$|em\s+\d{1,2}[/.-]\d{1,2})|[.!,\n]|$)/i,
           // Generic " em MERCHANT" after R$ value: "R$ 45,90 em PADARIA CENTRAL"
-          /R\$\s*[\d.,]+\s+(?:no\s+(?:d[eé]bito|cr[eé]dito)\s+)?(?:com\s+nupay\s+)?(?:aprovad[oa]\s+)?em\s+([A-Za-z0-9À-ú][A-Za-z0-9À-ú\s.*&/_-]{1,48}?)(?=\s+(?:no\s+d[eé]bito|no\s+cr[eé]dito|com\s+o?\s*cart[aã]o|usando|em\s+\d{1,2}[/.-]\d{1,2}|\s+às\s+\d)|[.!,\n]|$)/i,
+          /R\$\s*[\d.,]+\s+(?:no\s+(?:d[eé]bito|cr[eé]dito)\s+)?(?:com\s+nupay\s+)?(?:aprovad[oa]\s+)?em\s+([A-Za-z0-9À-ú][A-Za-z0-9À-ú\s.*&/_-]{1,48}?)(?=\s+(?:no\s+d[eé]bito|no\s+cr[eé]dito|para\s+o\s+cart[aã]o|com\s+o?\s*cart[aã]o|usando|em\s+\d{1,2}[/.-]\d{1,2}|\s+às\s+\d)|[.!,\n]|$)/i,
         ]
       : [
           /\b(?:de|remetente:?)\s+([A-Za-z0-9À-ú][A-Za-z0-9À-ú\s.*&/_-]{1,48}?)(?=\s+(?:no\s+valor|de\s+R\$)|[.!,\n]|$)/i,

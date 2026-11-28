@@ -29,6 +29,7 @@ import {
   type RecurringOccurrenceRecord,
 } from "@/lib/cashflow-engine";
 import { CATEGORIES, formatShortDate } from "@/lib/format";
+import { parseBrazilianBankNotification } from "@/lib/notification-parser";
 
 function parseStoredTags(rawJson: string | undefined): string[] {
   if (!rawJson) return [...CATEGORIES];
@@ -833,24 +834,53 @@ export async function fetchMobileNotificationsAction(): Promise<
     .orderBy(desc(mobileNotifications.originalTimestamp))
     .limit(120);
 
-  return rows.map((r) => ({
-    id: r.id,
-    fingerprint: r.fingerprint,
-    appPackage: r.appPackage,
-    appName: r.appName,
-    title: r.title,
-    message: r.message,
-    originalTimestamp: r.originalTimestamp,
-    eventDate: r.eventDate,
-    detectedType: (r.detectedType as MobileNotificationRecord["detectedType"]) || "outgoing",
-    parsedAmount: r.parsedAmount,
-    parsedMerchant: r.parsedMerchant,
-    parsedPaymentMethod: r.parsedPaymentMethod,
-    status: (r.status as MobileNotificationRecord["status"]) || "pending",
-    transactionId: r.transactionId,
-    rawPayload: r.rawPayload,
-    createdAt: r.createdAt,
-  }));
+  const validRecords: MobileNotificationRecord[] = [];
+  const staleIgnoredIds: string[] = [];
+
+  for (const r of rows) {
+    const rechecked = parseBrazilianBankNotification(r.title, r.message);
+    const isNonTransaction =
+      r.detectedType === "ignored" || rechecked.detectedType === "ignored";
+
+    // Never display non-transaction notifications (declined purchases, promotions, coupons, etc.)
+    // unless they were somehow already processed into a transaction.
+    if (isNonTransaction && r.status !== "processed") {
+      staleIgnoredIds.push(r.id);
+      continue;
+    }
+
+    validRecords.push({
+      id: r.id,
+      fingerprint: r.fingerprint,
+      appPackage: r.appPackage,
+      appName: r.appName,
+      title: r.title,
+      message: r.message,
+      originalTimestamp: r.originalTimestamp,
+      eventDate: r.eventDate,
+      detectedType:
+        (r.detectedType as MobileNotificationRecord["detectedType"]) ||
+        "outgoing",
+      parsedAmount: r.parsedAmount,
+      parsedMerchant: r.parsedMerchant,
+      parsedPaymentMethod: r.parsedPaymentMethod,
+      status: (r.status as MobileNotificationRecord["status"]) || "pending",
+      transactionId: r.transactionId,
+      rawPayload: r.rawPayload,
+      createdAt: r.createdAt,
+    });
+  }
+
+  // Automatically purge any non-transaction notifications that slipped into the table previously
+  if (staleIgnoredIds.length > 0) {
+    for (const id of staleIgnoredIds) {
+      await db
+        .delete(mobileNotifications)
+        .where(eq(mobileNotifications.id, id));
+    }
+  }
+
+  return validRecords;
 }
 
 async function processSingleNotificationApproval(
