@@ -1,9 +1,7 @@
 import React from "react";
-import {
-  fetchHealthDashboardDataAction,
-  fetchInitialCashflowData,
-} from "../actions";
-import { HealthDashboardClient } from "@/components/health-dashboard-client";
+import { fetchInitialCashflowData } from "../actions";
+import { fetchHealthDashboardDataAction } from "@/modules/health/actions";
+import { HealthDashboardClient } from "@/modules/health/components/health-dashboard-client";
 
 export const dynamic = "force-dynamic";
 

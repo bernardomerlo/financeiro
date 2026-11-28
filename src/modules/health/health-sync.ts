@@ -162,7 +162,11 @@ export function normalizeHealthSyncBatch(
     );
 
     let sleepScore: number | null = null;
-    if (item.sleepScore !== null && item.sleepScore !== undefined && item.sleepScore !== "") {
+    if (
+      item.sleepScore !== null &&
+      item.sleepScore !== undefined &&
+      item.sleepScore !== ""
+    ) {
       const scoreNum = Number(item.sleepScore);
       if (Number.isFinite(scoreNum) && scoreNum >= 0 && scoreNum <= 100) {
         sleepScore = Math.round(scoreNum);
@@ -277,6 +281,43 @@ export const EXERCISE_TYPE_LABELS: Record<string, string> = {
   DANCING: "Dança",
   OTHER: "Outro Exercício",
 };
+
+const GYM_EXERCISE_TYPES = new Set([
+  "WEIGHT_MACHINE",
+  "STRENGTH_TRAINING",
+  "CIRCUIT_TRAINING",
+  "CROSS_TRAINING",
+  "FUNCTIONAL_TRAINING",
+]);
+
+const CARDIO_EXERCISE_TYPES = new Set([
+  "RUNNING",
+  "WALKING",
+  "HIKING",
+  "CYCLING",
+  "INDOOR_CYCLING",
+  "SWIMMING",
+  "TREADMILL",
+  "ELLIPTICAL",
+  "ROWING",
+  "HIIT",
+  "SOCCER",
+  "TENNIS",
+  "BASKETBALL",
+  "VOLLEYBALL",
+  "BOXING",
+  "MARTIAL_ARTS",
+  "DANCING",
+]);
+
+export function classifyExerciseCategory(
+  exerciseType: string
+): "gym" | "cardio" | "other" {
+  const key = (exerciseType || "OTHER").trim().toUpperCase();
+  if (GYM_EXERCISE_TYPES.has(key)) return "gym";
+  if (CARDIO_EXERCISE_TYPES.has(key)) return "cardio";
+  return "other";
+}
 
 export function formatExerciseTypeLabel(exerciseType: string): string {
   const key = (exerciseType || "OTHER").trim().toUpperCase();

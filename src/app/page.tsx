@@ -1,10 +1,30 @@
 import React from "react";
-import { fetchInitialCashflowData } from "./actions";
-import { CashflowDashboardClient } from "@/components/cashflow-dashboard-client";
+import {
+  fetchInitialCashflowData,
+  fetchMobileNotificationsAction,
+} from "./actions";
+import { fetchHealthDashboardDataAction } from "@/modules/health/actions";
+import { getBujoDayViewData } from "@/modules/bujo/queries";
+import { HubOverviewClient } from "@/core/hub/hub-overview-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
-  const initialData = await fetchInitialCashflowData();
-  return <CashflowDashboardClient initialData={initialData} />;
+export default async function HubHomePage() {
+  const cashflowData = await fetchInitialCashflowData();
+  const todayIso = cashflowData.settings.referenceToday;
+
+  const [notifications, healthData, todayBujo] = await Promise.all([
+    fetchMobileNotificationsAction(),
+    fetchHealthDashboardDataAction(),
+    getBujoDayViewData(todayIso),
+  ]);
+
+  return (
+    <HubOverviewClient
+      initialCashflowData={cashflowData}
+      initialNotifications={notifications}
+      initialHealthData={healthData}
+      initialTodayBujo={todayBujo}
+    />
+  );
 }

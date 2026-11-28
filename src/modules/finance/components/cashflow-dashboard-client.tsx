@@ -29,7 +29,7 @@ import {
   type TransactionRecord,
 } from "@/lib/cashflow-engine";
 import { formatBRL, formatFullDate, formatShortDate } from "@/lib/format";
-import { TopNavbar } from "./top-navbar";
+import { TopNavbar } from "@/core/components/top-navbar";
 import { LaunchModal } from "./launch-modal";
 import { DayDetailDrawer } from "./day-detail-drawer";
 import { SimulationFloatingBar } from "./simulation-floating-bar";

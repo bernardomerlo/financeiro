@@ -43,7 +43,7 @@ import {
   type TransactionRecord,
 } from "@/lib/cashflow-engine";
 import { formatBRL, formatFullDate, formatShortDate } from "@/lib/format";
-import { TopNavbar } from "./top-navbar";
+import { TopNavbar } from "@/core/components/top-navbar";
 import { LaunchModal } from "./launch-modal";
 import { DayDetailDrawer } from "./day-detail-drawer";
 import { SettingsAndRecurringModals } from "./settings-and-recurring-modals";
@@ -906,7 +906,7 @@ export function InsightsClient({ initialData }: InsightsClientProps) {
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5">
               <Link
-                href="/"
+                href="/financeiro"
                 className="h-8 px-2.5 rounded-lg bg-[#eff3f0] border border-[#cfd8d2] hover:bg-[#dce6df] text-xs font-semibold text-[#141f17] flex items-center gap-1 transition-colors"
               >
                 <ArrowLeft className="w-3.5 h-3.5 text-[#2d6a3e]" />

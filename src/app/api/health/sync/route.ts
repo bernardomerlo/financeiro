@@ -7,7 +7,7 @@ import {
   verifyPassword,
   verifySessionToken,
 } from "@/lib/auth";
-import { normalizeHealthSyncBatch } from "@/lib/health-sync";
+import { normalizeHealthSyncBatch } from "@/modules/health/health-sync";
 
 function checkHealthWebhookAuth(request: NextRequest): {
   authorized: boolean;
@@ -112,11 +112,14 @@ export async function POST(request: NextRequest) {
                 uid, date, start_time, end_time, duration_minutes, sleep_score, device, synced_at, created_at
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(uid) DO UPDATE SET
-                date = excluded.date,
-                start_time = excluded.start_time,
-                end_time = excluded.end_time,
-                duration_minutes = excluded.duration_minutes,
-                sleep_score = COALESCE(excluded.sleep_score, health_sleeps.sleep_score),
+                date = CASE WHEN health_sleeps.is_manual_override = 1 THEN health_sleeps.date ELSE excluded.date END,
+                start_time = CASE WHEN health_sleeps.is_manual_override = 1 THEN health_sleeps.start_time ELSE excluded.start_time END,
+                end_time = CASE WHEN health_sleeps.is_manual_override = 1 THEN health_sleeps.end_time ELSE excluded.end_time END,
+                duration_minutes = CASE WHEN health_sleeps.is_manual_override = 1 THEN health_sleeps.duration_minutes ELSE excluded.duration_minutes END,
+                sleep_score = CASE
+                  WHEN health_sleeps.is_manual_override = 1 THEN COALESCE(health_sleeps.sleep_score, excluded.sleep_score)
+                  ELSE COALESCE(excluded.sleep_score, health_sleeps.sleep_score)
+                END,
                 device = excluded.device,
                 synced_at = excluded.synced_at`,
         args: [
@@ -142,13 +145,19 @@ export async function POST(request: NextRequest) {
                 calories_kcal, distance_meters, device, synced_at, created_at
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(uid) DO UPDATE SET
-                date = excluded.date,
-                exercise_type = excluded.exercise_type,
-                start_time = excluded.start_time,
-                end_time = excluded.end_time,
-                duration_minutes = excluded.duration_minutes,
-                calories_kcal = COALESCE(excluded.calories_kcal, health_exercises.calories_kcal),
-                distance_meters = COALESCE(excluded.distance_meters, health_exercises.distance_meters),
+                date = CASE WHEN health_exercises.is_manual_override = 1 THEN health_exercises.date ELSE excluded.date END,
+                exercise_type = CASE WHEN health_exercises.is_manual_override = 1 THEN health_exercises.exercise_type ELSE excluded.exercise_type END,
+                start_time = CASE WHEN health_exercises.is_manual_override = 1 THEN health_exercises.start_time ELSE excluded.start_time END,
+                end_time = CASE WHEN health_exercises.is_manual_override = 1 THEN health_exercises.end_time ELSE excluded.end_time END,
+                duration_minutes = CASE WHEN health_exercises.is_manual_override = 1 THEN health_exercises.duration_minutes ELSE excluded.duration_minutes END,
+                calories_kcal = CASE
+                  WHEN health_exercises.is_manual_override = 1 THEN health_exercises.calories_kcal
+                  ELSE COALESCE(excluded.calories_kcal, health_exercises.calories_kcal)
+                END,
+                distance_meters = CASE
+                  WHEN health_exercises.is_manual_override = 1 THEN health_exercises.distance_meters
+                  ELSE COALESCE(excluded.distance_meters, health_exercises.distance_meters)
+                END,
                 device = excluded.device,
                 synced_at = excluded.synced_at`,
         args: [

@@ -2,7 +2,9 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import * as schema from "./schema";
 
-const url = process.env.TURSO_DATABASE_URL || "libsql://financeiro-bernardomerlo.aws-us-east-2.turso.io";
+const url =
+  process.env.TURSO_DATABASE_URL ||
+  "libsql://financeiro-bernardomerlo.aws-us-east-2.turso.io";
 const authToken = process.env.TURSO_AUTH_TOKEN;
 
 export const client = createClient({
@@ -12,9 +14,30 @@ export const client = createClient({
 
 export const db = drizzle(client, { schema });
 
-export async function ensureSchema() {
+let schemaReadyPromise: Promise<void> | null = null;
+
+async function ensureColumnsExist(
+  tableName: string,
+  columnsToAdd: Array<{ name: string; definition: string }>
+) {
+  const info = await client.execute(`PRAGMA table_info(${tableName})`);
+  const existingNames = new Set(
+    info.rows.map((row) => String(row.name || "").toLowerCase())
+  );
+
+  for (const col of columnsToAdd) {
+    if (!existingNames.has(col.name.toLowerCase())) {
+      await client.execute(
+        `ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${col.definition}`
+      );
+    }
+  }
+}
+
+async function runSchemaMigration() {
   await client.batch(
     [
+      // Finance module
       `CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -80,6 +103,8 @@ export async function ensureSchema() {
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_mobile_notifications_fingerprint ON mobile_notifications(fingerprint)`,
       `CREATE INDEX IF NOT EXISTS idx_mobile_notifications_status ON mobile_notifications(status)`,
       `CREATE INDEX IF NOT EXISTS idx_mobile_notifications_event_date ON mobile_notifications(event_date)`,
+
+      // Health module
       `CREATE TABLE IF NOT EXISTS health_sleeps (
         uid TEXT PRIMARY KEY,
         date TEXT NOT NULL,
@@ -88,6 +113,8 @@ export async function ensureSchema() {
         duration_minutes INTEGER NOT NULL,
         sleep_score INTEGER,
         device TEXT NOT NULL DEFAULT 'android-samsung-health',
+        notes TEXT,
+        is_manual_override INTEGER NOT NULL DEFAULT 0,
         synced_at TEXT NOT NULL,
         created_at TEXT NOT NULL
       )`,
@@ -102,6 +129,8 @@ export async function ensureSchema() {
         calories_kcal REAL,
         distance_meters REAL,
         device TEXT NOT NULL DEFAULT 'android-samsung-health',
+        notes TEXT,
+        is_manual_override INTEGER NOT NULL DEFAULT 0,
         synced_at TEXT NOT NULL,
         created_at TEXT NOT NULL
       )`,
@@ -117,9 +146,69 @@ export async function ensureSchema() {
         raw_payload TEXT,
         created_at TEXT NOT NULL
       )`,
+
+      // BuJo module
+      `CREATE TABLE IF NOT EXISTS bujo_days (
+        date TEXT PRIMARY KEY,
+        yesterday_note TEXT,
+        today_note TEXT NOT NULL DEFAULT '',
+        gym_override INTEGER,
+        cardio_override INTEGER,
+        vitamin INTEGER NOT NULL DEFAULT 0,
+        reading_override INTEGER,
+        sleep_minutes_override INTEGER,
+        sleep_score_override INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS bujo_months (
+        year_month TEXT PRIMARY KEY,
+        considerations_markdown TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS bujo_tasks (
+        id TEXT PRIMARY KEY,
+        date TEXT,
+        year INTEGER NOT NULL,
+        month INTEGER,
+        parent_id TEXT,
+        title TEXT NOT NULL,
+        url TEXT,
+        status TEXT NOT NULL DEFAULT 'todo',
+        source TEXT NOT NULL DEFAULT 'daily',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_bujo_tasks_date ON bujo_tasks(date)`,
+      `CREATE INDEX IF NOT EXISTS idx_bujo_tasks_year_source ON bujo_tasks(year, source)`,
+      `CREATE INDEX IF NOT EXISTS idx_bujo_tasks_parent ON bujo_tasks(parent_id)`,
+      `CREATE TABLE IF NOT EXISTS bujo_entity_links (
+        id TEXT PRIMARY KEY,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        target_raw TEXT NOT NULL,
+        target_slug TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_bujo_entity_links_source ON bujo_entity_links(source_type, source_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_bujo_entity_links_target ON bujo_entity_links(target_slug)`,
     ],
     "write"
   );
+
+  // Safe column upgrades for previously created health tables
+  await Promise.all([
+    ensureColumnsExist("health_sleeps", [
+      { name: "notes", definition: "TEXT" },
+      { name: "is_manual_override", definition: "INTEGER NOT NULL DEFAULT 0" },
+    ]),
+    ensureColumnsExist("health_exercises", [
+      { name: "notes", definition: "TEXT" },
+      { name: "is_manual_override", definition: "INTEGER NOT NULL DEFAULT 0" },
+    ]),
+  ]);
 
   // Migrate any legacy daily_overrides rows into individual expense_daily transactions (RN-03, RN-04, RN-06)
   const legacyOverrides = await client.execute(
@@ -152,4 +241,14 @@ export async function ensureSchema() {
     }
     await client.execute(`DELETE FROM daily_overrides`);
   }
+}
+
+export async function ensureSchema() {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = runSchemaMigration().catch((err) => {
+      schemaReadyPromise = null;
+      throw err;
+    });
+  }
+  return schemaReadyPromise;
 }

@@ -1,10 +1,5 @@
-import React from "react";
-import { fetchInitialCashflowData } from "../actions";
-import { InsightsClient } from "@/components/insights-client";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function InsightsPage() {
-  const initialData = await fetchInitialCashflowData();
-  return <InsightsClient initialData={initialData} />;
+export default function InsightsRedirectPage() {
+  redirect("/financeiro/insights");
 }

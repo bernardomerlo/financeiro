@@ -13,11 +13,14 @@ import {
   HeartPulse,
   Loader2,
   Moon,
+  Pencil,
   RefreshCw,
   Send,
+  ShieldCheck,
   Smartphone,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashflowStore } from "@/store/use-cashflow-store";
@@ -34,14 +37,18 @@ import { formatShortDate } from "@/lib/format";
 import {
   formatDurationHoursMinutes,
   formatExerciseTypeLabel,
-} from "@/lib/health-sync";
+} from "@/modules/health/health-sync";
 import {
   deleteHealthExerciseAction,
   deleteHealthSleepAction,
   fetchHealthDashboardDataAction,
+  updateHealthExerciseManualAction,
+  updateHealthSleepManualAction,
   type HealthDashboardData,
-} from "@/app/actions";
-import { TopNavbar } from "./top-navbar";
+  type HealthExerciseRecord,
+  type HealthSleepRecord,
+} from "@/modules/health/actions";
+import { TopNavbar } from "@/core/components/top-navbar";
 
 interface HealthDashboardClientProps {
   initialCashflowData: {
@@ -158,6 +165,24 @@ export function HealthDashboardClient({
   const [originUrl, setOriginUrl] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
+  // Inline manual edit state (protects records with isManualOverride = 1)
+  const [editingSleepUid, setEditingSleepUid] = useState<string | null>(null);
+  const [sleepDraft, setSleepDraft] = useState<{
+    durationMinutes: string;
+    sleepScore: string;
+    notes: string;
+  }>({ durationMinutes: "", sleepScore: "", notes: "" });
+
+  const [editingExerciseUid, setEditingExerciseUid] = useState<string | null>(
+    null
+  );
+  const [exerciseDraft, setExerciseDraft] = useState<{
+    exerciseType: string;
+    durationMinutes: string;
+    caloriesKcal: string;
+    notes: string;
+  }>({ exerciseType: "", durationMinutes: "", caloriesKcal: "", notes: "" });
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOriginUrl(window.location.origin);
@@ -267,7 +292,6 @@ export function HealthDashboardClient({
   const projectedEndOfMonth =
     endOfCenterMonthRow?.projectedBalance ?? currentBalance;
 
-  // Health Metrics Summary
   const metrics = useMemo(() => {
     const sleeps = healthData.sleeps;
     const exercises = healthData.exercises;
@@ -304,7 +328,6 @@ export function HealthDashboardClient({
       ).toFixed(2)
     );
 
-    // Group exercises by modality
     const byModalityMap = new Map<
       string,
       {
@@ -361,6 +384,76 @@ export function HealthDashboardClient({
       window.setTimeout(() => setCopiedField(null), 2000);
     } catch {
       toast.error("Não foi possível copiar.");
+    }
+  }
+
+  function startEditSleep(sleep: HealthSleepRecord) {
+    setEditingSleepUid(sleep.uid);
+    setSleepDraft({
+      durationMinutes: String(sleep.durationMinutes),
+      sleepScore: sleep.sleepScore != null ? String(sleep.sleepScore) : "",
+      notes: sleep.notes || "",
+    });
+  }
+
+  async function saveSleepEdit(uid: string) {
+    const mins = Number(sleepDraft.durationMinutes);
+    if (!Number.isFinite(mins) || mins < 0) {
+      toast.error("Duração inválida.");
+      return;
+    }
+    const score =
+      sleepDraft.sleepScore.trim() !== ""
+        ? Number(sleepDraft.sleepScore)
+        : null;
+    try {
+      await updateHealthSleepManualAction({
+        uid,
+        durationMinutes: mins,
+        sleepScore: score,
+        notes: sleepDraft.notes,
+      });
+      setEditingSleepUid(null);
+      await refreshHealthData(false);
+      toast.success("Sono atualizado e protegido contra sobrescrita.");
+    } catch {
+      toast.error("Erro ao salvar alteração do sono.");
+    }
+  }
+
+  function startEditExercise(ex: HealthExerciseRecord) {
+    setEditingExerciseUid(ex.uid);
+    setExerciseDraft({
+      exerciseType: ex.exerciseType,
+      durationMinutes: String(ex.durationMinutes),
+      caloriesKcal: ex.caloriesKcal != null ? String(ex.caloriesKcal) : "",
+      notes: ex.notes || "",
+    });
+  }
+
+  async function saveExerciseEdit(uid: string) {
+    const mins = Number(exerciseDraft.durationMinutes);
+    if (!Number.isFinite(mins) || mins < 0) {
+      toast.error("Duração inválida.");
+      return;
+    }
+    const kcal =
+      exerciseDraft.caloriesKcal.trim() !== ""
+        ? Number(exerciseDraft.caloriesKcal)
+        : null;
+    try {
+      await updateHealthExerciseManualAction({
+        uid,
+        exerciseType: exerciseDraft.exerciseType,
+        durationMinutes: mins,
+        caloriesKcal: kcal,
+        notes: exerciseDraft.notes,
+      });
+      setEditingExerciseUid(null);
+      await refreshHealthData(false);
+      toast.success("Exercício atualizado e protegido contra sobrescrita.");
+    } catch {
+      toast.error("Erro ao salvar alteração do exercício.");
     }
   }
 
@@ -440,8 +533,7 @@ export function HealthDashboardClient({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* Navigation Tabs */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             <div className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
               {(
                 [
@@ -491,7 +583,6 @@ export function HealthDashboardClient({
 
         {/* KPI Cards Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          {/* Card 1: Último Sono */}
           <div className="bg-white rounded-xl border border-[#cfd8d2] p-3 shadow-2xs space-y-1">
             <div className="flex items-center justify-between text-[11px] font-semibold text-[#526657]">
               <span>Último Sono</span>
@@ -521,7 +612,6 @@ export function HealthDashboardClient({
             </div>
           </div>
 
-          {/* Card 2: Média de Sono (7 registros) */}
           <div className="bg-white rounded-xl border border-[#cfd8d2] p-3 shadow-2xs space-y-1">
             <div className="flex items-center justify-between text-[11px] font-semibold text-[#526657]">
               <span>Média de Sono (7 noites)</span>
@@ -539,7 +629,6 @@ export function HealthDashboardClient({
             </div>
           </div>
 
-          {/* Card 3: Exercícios & Tempo Ativo */}
           <div className="bg-white rounded-xl border border-[#cfd8d2] p-3 shadow-2xs space-y-1">
             <div className="flex items-center justify-between text-[11px] font-semibold text-[#526657]">
               <span>Treinos Sincronizados</span>
@@ -556,7 +645,6 @@ export function HealthDashboardClient({
             </div>
           </div>
 
-          {/* Card 4: Calorias & Distância */}
           <div className="bg-white rounded-xl border border-[#cfd8d2] p-3 shadow-2xs space-y-1">
             <div className="flex items-center justify-between text-[11px] font-semibold text-[#526657]">
               <span>Gasto & Distância</span>
@@ -577,7 +665,6 @@ export function HealthDashboardClient({
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-            {/* Left 7 Cols: Recent Sleep History & Score Bars */}
             <div className="lg:col-span-7 bg-white rounded-xl border border-[#cfd8d2] p-3.5 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -645,6 +732,14 @@ export function HealthDashboardClient({
                               {formatLocalTime(sleep.startTime)} →{" "}
                               {formatLocalTime(sleep.endTime)}
                             </span>
+                            {sleep.isManualOverride && (
+                              <span
+                                className="px-1.5 py-0.2 rounded bg-[#fff3cd] border border-[#ffe69c] text-[10px] font-bold text-[#7c5800]"
+                                title="Editado manualmente (protegido contra sync)"
+                              >
+                                Manual
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -660,6 +755,12 @@ export function HealthDashboardClient({
                             </span>
                           </div>
                         </div>
+
+                        {sleep.notes && (
+                          <div className="text-[11px] text-[#37473b]">
+                            {sleep.notes}
+                          </div>
+                        )}
 
                         <div className="w-full h-1.5 rounded-full bg-[#e4ebe6] overflow-hidden">
                           <div
@@ -677,9 +778,7 @@ export function HealthDashboardClient({
               )}
             </div>
 
-            {/* Right 5 Cols: Exercises by Modality + Recent Workouts */}
             <div className="lg:col-span-5 space-y-3">
-              {/* Modalities Summary */}
               <div className="bg-white rounded-xl border border-[#cfd8d2] p-3.5 shadow-2xs space-y-2.5">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-extrabold text-[#141f17] uppercase tracking-wider flex items-center gap-1.5">
@@ -731,7 +830,6 @@ export function HealthDashboardClient({
                 )}
               </div>
 
-              {/* Recent Sync Logs */}
               <div className="bg-white rounded-xl border border-[#cfd8d2] p-3.5 shadow-2xs space-y-2">
                 <h2 className="text-xs font-extrabold text-[#141f17] uppercase tracking-wider flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-[#2d6a3e]" />
@@ -769,12 +867,19 @@ export function HealthDashboardClient({
           </div>
         )}
 
-        {/* TAB 2: SLEEPS LIST */}
+        {/* TAB 2: SLEEPS LIST (with inline manual override & notes) */}
         {activeTab === "sleeps" && (
           <div className="bg-white rounded-xl border border-[#cfd8d2] p-3.5 shadow-2xs space-y-2.5">
-            <h2 className="text-xs font-extrabold text-[#141f17] uppercase tracking-wider">
-              Todos os Registros de Sono ({healthData.sleeps.length})
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-extrabold text-[#141f17] uppercase tracking-wider">
+                Todos os Registros de Sono ({healthData.sleeps.length})
+              </h2>
+              <span className="text-[11px] text-[#526657] flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#2d6a3e]" />
+                Edições manuais ficam protegidas contra sobrescrita no próximo
+                sync
+              </span>
+            </div>
             {healthData.sleeps.length === 0 ? (
               <div className="text-xs text-[#526657] py-6 text-center">
                 Nenhum registro de sono sincronizado.
@@ -783,46 +888,119 @@ export function HealthDashboardClient({
               <div className="divide-y divide-[#e4ebe6]">
                 {healthData.sleeps.map((sleep) => {
                   const scoreMeta = classifySleepScore(sleep.sleepScore);
+                  const isEditing = editingSleepUid === sleep.uid;
                   return (
-                    <div
-                      key={sleep.uid}
-                      className="py-2.5 flex items-center justify-between gap-2 text-xs"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-[#141f17]">
-                            {formatShortDate(sleep.date)}
-                          </span>
-                          <span className="text-[#526657]">
-                            Dormiu {formatLocalTime(sleep.startTime)} • Acordou{" "}
-                            {formatLocalTime(sleep.endTime)}
-                          </span>
+                    <div key={sleep.uid} className="py-2.5 space-y-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-[#141f17]">
+                              {formatShortDate(sleep.date)}
+                            </span>
+                            <span className="text-[#526657]">
+                              Dormiu {formatLocalTime(sleep.startTime)} • Acordou{" "}
+                              {formatLocalTime(sleep.endTime)}
+                            </span>
+                            {sleep.isManualOverride && (
+                              <span className="px-1.5 py-0.2 rounded bg-[#fff3cd] border border-[#ffe69c] text-[10px] font-bold text-[#7c5800]">
+                                Editado manualmente
+                              </span>
+                            )}
+                          </div>
+                          {sleep.notes && !isEditing && (
+                            <div className="text-[11px] text-[#37473b]">
+                              {sleep.notes}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-[10px] text-[#526657] font-mono">
-                          UID: {sleep.uid}
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded border text-[11px] font-bold ${scoreMeta.badgeClass}`}
+                          >
+                            {sleep.sleepScore != null
+                              ? `Score ${sleep.sleepScore}`
+                              : "Sem Score"}
+                          </span>
+                          <span className="font-extrabold text-[#141f17] tabular-nums">
+                            {formatDurationHoursMinutes(sleep.durationMinutes)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              isEditing
+                                ? setEditingSleepUid(null)
+                                : startEditSleep(sleep)
+                            }
+                            className="p-1.5 rounded-lg text-[#526657] hover:text-[#141f17] hover:bg-[#eff3f0] cursor-pointer"
+                            title="Editar manualmente / Anotar"
+                          >
+                            {isEditing ? (
+                              <X className="w-3.5 h-3.5" />
+                            ) : (
+                              <Pencil className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSleep(sleep.uid)}
+                            className="p-1.5 rounded-lg text-[#526657] hover:text-[#9e1c1c] hover:bg-[#ffebee] cursor-pointer"
+                            title="Excluir registro de sono"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className={`px-2 py-0.5 rounded border text-[11px] font-bold ${scoreMeta.badgeClass}`}
-                        >
-                          {sleep.sleepScore != null
-                            ? `Score ${sleep.sleepScore}`
-                            : "Sem Score"}
-                        </span>
-                        <span className="font-extrabold text-[#141f17] tabular-nums">
-                          {formatDurationHoursMinutes(sleep.durationMinutes)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSleep(sleep.uid)}
-                          className="p-1.5 rounded-lg text-[#526657] hover:text-[#9e1c1c] hover:bg-[#ffebee] cursor-pointer"
-                          title="Excluir registro de sono"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {isEditing && (
+                        <div className="p-2.5 rounded-lg bg-[#f8faf8] border border-[#2d6a3e] grid grid-cols-1 sm:grid-cols-4 gap-2">
+                          <input
+                            type="number"
+                            value={sleepDraft.durationMinutes}
+                            onChange={(e) =>
+                              setSleepDraft((p) => ({
+                                ...p,
+                                durationMinutes: e.target.value,
+                              }))
+                            }
+                            placeholder="Minutos"
+                            className="h-8 px-2 rounded border border-[#c5d1c8] bg-white text-xs"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={sleepDraft.sleepScore}
+                            onChange={(e) =>
+                              setSleepDraft((p) => ({
+                                ...p,
+                                sleepScore: e.target.value,
+                              }))
+                            }
+                            placeholder="Sleep Score (0-100)"
+                            className="h-8 px-2 rounded border border-[#c5d1c8] bg-white text-xs"
+                          />
+                          <input
+                            type="text"
+                            value={sleepDraft.notes}
+                            onChange={(e) =>
+                              setSleepDraft((p) => ({
+                                ...p,
+                                notes: e.target.value,
+                              }))
+                            }
+                            placeholder="Observações do sono..."
+                            className="h-8 px-2 rounded border border-[#c5d1c8] bg-white text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => saveSleepEdit(sleep.uid)}
+                            className="h-8 px-3 rounded bg-[#2d6a3e] text-white font-bold text-xs cursor-pointer"
+                          >
+                            Salvar Override
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -831,67 +1009,162 @@ export function HealthDashboardClient({
           </div>
         )}
 
-        {/* TAB 3: EXERCISES LIST */}
+        {/* TAB 3: EXERCISES LIST (with inline manual override & notes) */}
         {activeTab === "exercises" && (
           <div className="bg-white rounded-xl border border-[#cfd8d2] p-3.5 shadow-2xs space-y-2.5">
-            <h2 className="text-xs font-extrabold text-[#141f17] uppercase tracking-wider">
-              Todos os Exercícios Sincronizados ({healthData.exercises.length})
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-extrabold text-[#141f17] uppercase tracking-wider">
+                Todos os Exercícios Sincronizados ({healthData.exercises.length})
+              </h2>
+              <span className="text-[11px] text-[#526657] flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#2d6a3e]" />
+                Anotações e edições manuais protegidas
+              </span>
+            </div>
             {healthData.exercises.length === 0 ? (
               <div className="text-xs text-[#526657] py-6 text-center">
                 Nenhum registro de exercício sincronizado.
               </div>
             ) : (
               <div className="divide-y divide-[#e4ebe6]">
-                {healthData.exercises.map((ex) => (
-                  <div
-                    key={ex.uid}
-                    className="py-2.5 flex items-center justify-between gap-2 text-xs"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-[#e8f5e9] border border-[#a5d6a7] text-[#1b5e20] font-bold text-[11px]">
-                          {formatExerciseTypeLabel(ex.exerciseType)}
-                        </span>
-                        <span className="font-bold text-[#141f17]">
-                          {formatShortDate(ex.date)}
-                        </span>
-                        <span className="text-[#526657]">
-                          {formatLocalTime(ex.startTime)} →{" "}
-                          {formatLocalTime(ex.endTime)}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-[#526657] flex items-center gap-3">
-                        {ex.caloriesKcal != null && (
-                          <span className="inline-flex items-center gap-1">
-                            <Flame className="w-3 h-3 text-[#ea580c]" />
-                            {Math.round(ex.caloriesKcal)} kcal
-                          </span>
-                        )}
-                        {ex.distanceMeters != null && ex.distanceMeters > 0 && (
-                          <span className="inline-flex items-center gap-1">
-                            <Footprints className="w-3 h-3 text-[#2d6a3e]" />
-                            {(ex.distanceMeters / 1000).toFixed(2)} km
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                {healthData.exercises.map((ex) => {
+                  const isEditing = editingExerciseUid === ex.uid;
+                  return (
+                    <div key={ex.uid} className="py-2.5 space-y-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded bg-[#e8f5e9] border border-[#a5d6a7] text-[#1b5e20] font-bold text-[11px]">
+                              {formatExerciseTypeLabel(ex.exerciseType)}
+                            </span>
+                            <span className="font-bold text-[#141f17]">
+                              {formatShortDate(ex.date)}
+                            </span>
+                            <span className="text-[#526657]">
+                              {formatLocalTime(ex.startTime)} →{" "}
+                              {formatLocalTime(ex.endTime)}
+                            </span>
+                            {ex.isManualOverride && (
+                              <span className="px-1.5 py-0.2 rounded bg-[#fff3cd] border border-[#ffe69c] text-[10px] font-bold text-[#7c5800]">
+                                Editado manualmente
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-[#526657] flex items-center gap-3">
+                            {ex.caloriesKcal != null && (
+                              <span className="inline-flex items-center gap-1">
+                                <Flame className="w-3 h-3 text-[#ea580c]" />
+                                {Math.round(ex.caloriesKcal)} kcal
+                              </span>
+                            )}
+                            {ex.distanceMeters != null &&
+                              ex.distanceMeters > 0 && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Footprints className="w-3 h-3 text-[#2d6a3e]" />
+                                  {(ex.distanceMeters / 1000).toFixed(2)} km
+                                </span>
+                              )}
+                          </div>
+                          {ex.notes && !isEditing && (
+                            <div className="text-[11px] text-[#37473b] pt-0.5">
+                              {ex.notes}
+                            </div>
+                          )}
+                        </div>
 
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-extrabold text-[#141f17] tabular-nums">
-                        {formatDurationHoursMinutes(ex.durationMinutes)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteExercise(ex.uid)}
-                        className="p-1.5 rounded-lg text-[#526657] hover:text-[#9e1c1c] hover:bg-[#ffebee] cursor-pointer"
-                        title="Excluir exercício"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-[#141f17] tabular-nums">
+                            {formatDurationHoursMinutes(ex.durationMinutes)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              isEditing
+                                ? setEditingExerciseUid(null)
+                                : startEditExercise(ex)
+                            }
+                            className="p-1.5 rounded-lg text-[#526657] hover:text-[#141f17] hover:bg-[#eff3f0] cursor-pointer"
+                            title="Editar / Anotar treino"
+                          >
+                            {isEditing ? (
+                              <X className="w-3.5 h-3.5" />
+                            ) : (
+                              <Pencil className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExercise(ex.uid)}
+                            className="p-1.5 rounded-lg text-[#526657] hover:text-[#9e1c1c] hover:bg-[#ffebee] cursor-pointer"
+                            title="Excluir exercício"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {isEditing && (
+                        <div className="p-2.5 rounded-lg bg-[#f8faf8] border border-[#2d6a3e] grid grid-cols-1 sm:grid-cols-5 gap-2">
+                          <input
+                            type="text"
+                            value={exerciseDraft.exerciseType}
+                            onChange={(e) =>
+                              setExerciseDraft((p) => ({
+                                ...p,
+                                exerciseType: e.target.value,
+                              }))
+                            }
+                            placeholder="Tipo (ex: WEIGHT_MACHINE)"
+                            className="h-8 px-2 rounded border border-[#c5d1c8] bg-white text-xs"
+                          />
+                          <input
+                            type="number"
+                            value={exerciseDraft.durationMinutes}
+                            onChange={(e) =>
+                              setExerciseDraft((p) => ({
+                                ...p,
+                                durationMinutes: e.target.value,
+                              }))
+                            }
+                            placeholder="Minutos"
+                            className="h-8 px-2 rounded border border-[#c5d1c8] bg-white text-xs"
+                          />
+                          <input
+                            type="number"
+                            value={exerciseDraft.caloriesKcal}
+                            onChange={(e) =>
+                              setExerciseDraft((p) => ({
+                                ...p,
+                                caloriesKcal: e.target.value,
+                              }))
+                            }
+                            placeholder="Kcal"
+                            className="h-8 px-2 rounded border border-[#c5d1c8] bg-white text-xs"
+                          />
+                          <input
+                            type="text"
+                            value={exerciseDraft.notes}
+                            onChange={(e) =>
+                              setExerciseDraft((p) => ({
+                                ...p,
+                                notes: e.target.value,
+                              }))
+                            }
+                            placeholder="Notas (ex: Treino A - Peito/Tríceps)"
+                            className="h-8 px-2 rounded border border-[#c5d1c8] bg-white text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => saveExerciseEdit(ex.uid)}
+                            className="h-8 px-3 rounded bg-[#2d6a3e] text-white font-bold text-xs cursor-pointer"
+                          >
+                            Salvar Override
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -932,7 +1205,6 @@ export function HealthDashboardClient({
               </button>
             </div>
 
-            {/* Step 1: Endpoint URL & Auth Header for MainActivity */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="p-3 rounded-xl bg-[#f8faf8] border border-[#d5ded8] space-y-1.5">
                 <div className="text-xs font-bold text-[#141f17]">
@@ -993,14 +1265,12 @@ export function HealthDashboardClient({
                 </div>
                 <p className="text-[11px] text-[#526657]">
                   Você pode informar <code className="font-mono">Bearer SUA_SENHA</code>,{" "}
-                  <code className="font-mono">x-api-key: SUA_SENHA</code> ou
-                  deixar em branco caso <code className="font-mono">WEBHOOK_SECRET</code>{" "}
-                  não esteja ativo.
+                  <code className="font-mono">x-api-key: SUA_SENHA</code> ou sua
+                  senha diretamente.
                 </p>
               </div>
             </div>
 
-            {/* Step 2: Samsung Health Developer Mode & One UI Battery Checklist */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
               <div className="p-3 rounded-xl border border-[#e4ebe6] bg-[#f8faf8] space-y-1.5">
                 <div className="font-extrabold text-[#141f17] flex items-center gap-1.5">
@@ -1016,7 +1286,7 @@ export function HealthDashboardClient({
                   </li>
                   <li>
                     Toque <strong>10 vezes seguidas</strong> no número da versão
-                    até aparecer <em>&quot;Developer modeFp / Modo de desenvolvedor ativado&quot;</em>.
+                    até aparecer <em>&quot;Developer Mode&quot;</em>.
                   </li>
                 </ol>
               </div>
@@ -1058,7 +1328,7 @@ export function HealthDashboardClient({
                     <strong>Irrestrito (Unrestricted)</strong>.
                   </li>
                   <li>
-                    Isso garante que a One UI não bloqueie o{" "}
+                    Isso garante que a One UI não suspenda o{" "}
                     <code className="font-mono">WorkManager</code> em segundo
                     plano.
                   </li>

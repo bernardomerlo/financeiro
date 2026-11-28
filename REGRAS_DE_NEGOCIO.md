@@ -49,7 +49,11 @@
 
 ## 5. Arquitetura Personal Hub & Módulo Samsung Health
 - **RN-13 (Personal Hub Multi-Módulos):**
-  - O sistema funciona como um **Personal Hub** com seletor global de módulos no topo (`Hub` • `Financeiro` • `Samsung Health`).
-  - O módulo **Financeiro** mantém todas as regras `RN-01` a `RN-12` intactas.
+  - O sistema funciona como um **Personal Hub** modularizado por domínio (`src/core` + `src/modules/{finance,health,bujo}`), com seletor global de módulos no topo (`Hub` • `BuJo` • `Financeiro` • `Saúde`).
+  - A rota raiz `/` é o **Personal Hub (Cockpit de Hoje + Visão dos Módulos)**. O módulo **Financeiro** vive em `/financeiro` (com redirecionamentos em `/insights` e `/notificacoes` para `/financeiro/insights` e `/financeiro/notificacoes`), mantendo todas as regras `RN-01` a `RN-12` intactas.
   - O módulo **Samsung Health** (`/saude`) recebe dados do app Android em Kotlin (`bernardomerlo/automacao_samsung_health`) via `POST /api/health/sync` (ou `POST /api/health`).
-  - O contrato JSON (`SyncBatchPayload`) recebe `device`, `syncedAt`, `sleeps` (`uid`, `startTime`, `endTime`, `durationMinutes`, `sleepScore`) e `exercises` (`uid`, `exerciseType`, `startTime`, `endTime`, `durationMinutes`, `caloriesKcal`, `distanceMeters`), fazendo **upsert idempotente por `uid`** (`ON CONFLICT(uid) DO UPDATE`) e preservando `sleepScore` consolidado posteriormente pelo Samsung Health.
+  - O contrato JSON (`SyncBatchPayload`) recebe `device`, `syncedAt`, `sleeps` e `exercises`, fazendo **upsert idempotente por `uid`** (`ON CONFLICT(uid) DO UPDATE`), preservando `sleepScore` consolidado posteriormente e respeitando `is_manual_override = 1` caso o usuário tenha editado o registro na interface web.
+- **RN-14 (Módulo Bullet Journal — `/bujo`):**
+  - **Diário (`/bujo` e `/bujo/YYYY-MM-DD`):** Integra automaticamente Sono/Score (`health_sleeps`), Academia & Cardio (`health_exercises`, permitindo override manual `Auto / Sim / Não`), resumo financeiro do dia (`transactions`), toggles rápidos de Vitamina e Leitura, compromissos agendados no `Log Anual`, tarefas pendentes roladas de dias anteriores (com ação de migrar para o dia atual), tarefas + subtarefas e Considerações (`Ontem` herdado automaticamente do dia anterior + `Hoje` em Markdown com detecção de `[[Wikilinks]]` em `bujo_entity_links`).
+  - **Visão Mensal (`/bujo/mes/YYYY-MM`):** Calendário em grid (Dom–Sáb) com tarefas pendentes e ícones de hábitos, gráficos de Horas de Sono (faixa ideal `7h–10h`) e Nota Sono (`75–100`), tabela consolidada do mês e considerações mensais (`bujo_months`).
+  - **Log Anual (`/bujo/anual/YYYY`):** Objetivos Anuais (`source = 'goal'`), Heatmap Anual (verde `>= 75`, vermelho `< 75`) e Log Mensal (Jan–Dez) de compromissos futuros vinculados automaticamente às datas e ao calendário mensal.

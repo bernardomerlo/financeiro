@@ -81,7 +81,7 @@ export default function LoginPage() {
             <span className="w-6 h-6 rounded bg-[#2d6a3e] text-white flex items-center justify-center">
               <Lock className="w-3.5 h-3.5" />
             </span>
-            <h1 className="text-sm font-bold text-[#141f17]">CashFlow</h1>
+            <h1 className="text-sm font-bold text-[#141f17]">Personal Hub</h1>
           </div>
           <span className="text-[11px] font-semibold text-[#526657]">20h Cache</span>
         </div>

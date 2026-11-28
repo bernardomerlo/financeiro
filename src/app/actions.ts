@@ -17,9 +17,6 @@ import {
   recurringRules,
   recurringOccurrences,
   mobileNotifications,
-  healthSleeps,
-  healthExercises,
-  healthSyncLogs,
 } from "@/db/schema";
 import {
   calculateCreditCardInstallmentDates,
@@ -33,6 +30,14 @@ import {
 } from "@/lib/cashflow-engine";
 import { CATEGORIES, formatShortDate } from "@/lib/format";
 import { parseBrazilianBankNotification } from "@/lib/notification-parser";
+
+function revalidateFinancePaths() {
+  revalidatePath("/");
+  revalidatePath("/financeiro");
+  revalidatePath("/financeiro/insights");
+  revalidatePath("/financeiro/notificacoes");
+  revalidatePath("/bujo");
+}
 
 function parseStoredTags(rawJson: string | undefined): string[] {
   if (!rawJson) return [...CATEGORIES];
@@ -188,8 +193,7 @@ export async function createRealTransactionAction(payload: CreateTransactionPayl
     await db.insert(transactions).values(row);
   }
 
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
   return rowsToInsert;
 }
 
@@ -404,16 +408,13 @@ export async function moveDayFieldTransactionsAction(input: {
     movedAmount = Number(movedAmount.toFixed(2));
   }
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return { ok: true, movedAmount };
 }
 
 export async function deleteTransactionAction(id: string) {
   await db.delete(transactions).where(eq(transactions.id, id));
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
 }
 
 export async function updateTransactionAmountAction(
@@ -425,8 +426,7 @@ export async function updateTransactionAmountAction(
     sql: `UPDATE transactions SET amount = ?, description = COALESCE(?, description) WHERE id = ?`,
     args: [amount, description ?? null, id],
   });
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
 }
 
 export async function updateTransactionAction(input: {
@@ -464,9 +464,7 @@ export async function updateTransactionAction(input: {
       input.id,
     ],
   });
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
 }
 
 export async function saveEditedMovementAction(input: {
@@ -575,9 +573,7 @@ export async function saveEditedMovementAction(input: {
     }
   }
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
 }
 
 export async function upsertDailyOverrideAction(date: string, amount: number, note?: string) {
@@ -585,14 +581,12 @@ export async function upsertDailyOverrideAction(date: string, amount: number, no
     sql: `INSERT OR REPLACE INTO daily_overrides (date, amount, note, is_reconciled) VALUES (?, ?, ?, 1)`,
     args: [date, amount, note ?? null],
   });
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
 }
 
 export async function removeDailyOverrideAction(date: string) {
   await db.delete(dailyOverrides).where(eq(dailyOverrides.date, date));
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
 }
 
 export async function commitStagedChangesAction(input: {
@@ -639,8 +633,7 @@ export async function commitStagedChangesAction(input: {
     });
   }
 
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
 }
 
 export async function updateSettingsAction(newSettings: Partial<CashflowSettings>) {
@@ -663,9 +656,7 @@ export async function updateSettingsAction(newSettings: Partial<CashflowSettings
     });
   }
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
 }
 
 export async function createTagAction(tagName: string): Promise<string[]> {
@@ -693,9 +684,7 @@ export async function createTagAction(tagName: string): Promise<string[]> {
     args: [JSON.stringify(updatedTags)],
   });
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return updatedTags;
 }
 
@@ -717,9 +706,7 @@ export async function deleteTagAction(tagName: string): Promise<string[]> {
     args: [JSON.stringify(updatedTags)],
   });
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return updatedTags;
 }
 
@@ -737,15 +724,13 @@ export async function upsertRecurringRuleAction(rule: {
           VALUES (?, ?, ?, ?, ?, ?, 'cash', 1)`,
     args: [id, rule.title, rule.amount, rule.type, rule.category ?? "Outros", rule.dayOfMonth],
   });
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
   return id;
 }
 
 export async function deleteRecurringRuleAction(id: string) {
   await db.delete(recurringRules).where(eq(recurringRules.id, id));
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
 }
 
 export async function setRecurringOccurrenceStatusAction(input: {
@@ -760,8 +745,7 @@ export async function setRecurringOccurrenceStatusAction(input: {
           VALUES (?, ?, ?, ?, ?)`,
     args: [id, input.ruleId, input.yearMonth, input.status, input.modifiedAmount ?? null],
   });
-  revalidatePath("/");
-  revalidatePath("/insights");
+  revalidateFinancePaths();
 }
 
 export async function loginWithPasswordAction(password: string): Promise<{
@@ -1010,9 +994,7 @@ export async function approveNotificationAction(
 
   const res = await processSingleNotificationApproval(input, settingsMap);
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return res;
 }
 
@@ -1031,9 +1013,7 @@ export async function approveAllNotificationsAction(
     }
   }
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return { ok: true, approvedCount };
 }
 
@@ -1043,8 +1023,7 @@ export async function rejectNotificationAction(id: string) {
     sql: `UPDATE mobile_notifications SET status = 'ignored' WHERE id = ?`,
     args: [id],
   });
-  revalidatePath("/");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return { ok: true };
 }
 
@@ -1056,8 +1035,7 @@ export async function rejectAllNotificationsAction(ids: string[]) {
       args: [id],
     });
   }
-  revalidatePath("/");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return { ok: true, rejectedCount: ids.length };
 }
 
@@ -1067,8 +1045,7 @@ export async function reopenNotificationAction(id: string) {
     sql: `UPDATE mobile_notifications SET status = 'pending' WHERE id = ?`,
     args: [id],
   });
-  revalidatePath("/");
-  revalidatePath("/notificacoes");
+  revalidateFinancePaths();
   return { ok: true };
 }
 
@@ -1120,127 +1097,7 @@ export async function revertApprovedNotificationAction(id: string) {
     args: [id],
   });
 
-  revalidatePath("/");
-  revalidatePath("/insights");
-  revalidatePath("/notificacoes");
-  return { ok: true };
-}
-
-export interface HealthSleepRecord {
-  uid: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  durationMinutes: number;
-  sleepScore: number | null;
-  device: string;
-  syncedAt: string;
-  createdAt: string;
-}
-
-export interface HealthExerciseRecord {
-  uid: string;
-  date: string;
-  exerciseType: string;
-  startTime: string;
-  endTime: string;
-  durationMinutes: number;
-  caloriesKcal: number | null;
-  distanceMeters: number | null;
-  device: string;
-  syncedAt: string;
-  createdAt: string;
-}
-
-export interface HealthSyncLogRecord {
-  id: string;
-  device: string;
-  syncedAt: string;
-  sleepsReceived: number;
-  sleepsUpserted: number;
-  exercisesReceived: number;
-  exercisesUpserted: number;
-  createdAt: string;
-}
-
-export interface HealthDashboardData {
-  sleeps: HealthSleepRecord[];
-  exercises: HealthExerciseRecord[];
-  syncLogs: HealthSyncLogRecord[];
-}
-
-export async function fetchHealthDashboardDataAction(): Promise<HealthDashboardData> {
-  await ensureSchema();
-
-  const [rawSleeps, rawExercises, rawLogs] = await Promise.all([
-    db
-      .select()
-      .from(healthSleeps)
-      .orderBy(desc(healthSleeps.endTime))
-      .limit(120),
-    db
-      .select()
-      .from(healthExercises)
-      .orderBy(desc(healthExercises.startTime))
-      .limit(120),
-    db
-      .select()
-      .from(healthSyncLogs)
-      .orderBy(desc(healthSyncLogs.createdAt))
-      .limit(25),
-  ]);
-
-  return {
-    sleeps: rawSleeps.map((s) => ({
-      uid: s.uid,
-      date: s.date,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      durationMinutes: s.durationMinutes,
-      sleepScore: s.sleepScore,
-      device: s.device,
-      syncedAt: s.syncedAt,
-      createdAt: s.createdAt,
-    })),
-    exercises: rawExercises.map((e) => ({
-      uid: e.uid,
-      date: e.date,
-      exerciseType: e.exerciseType,
-      startTime: e.startTime,
-      endTime: e.endTime,
-      durationMinutes: e.durationMinutes,
-      caloriesKcal: e.caloriesKcal,
-      distanceMeters: e.distanceMeters,
-      device: e.device,
-      syncedAt: e.syncedAt,
-      createdAt: e.createdAt,
-    })),
-    syncLogs: rawLogs.map((l) => ({
-      id: l.id,
-      device: l.device,
-      syncedAt: l.syncedAt,
-      sleepsReceived: l.sleepsReceived,
-      sleepsUpserted: l.sleepsUpserted,
-      exercisesReceived: l.exercisesReceived,
-      exercisesUpserted: l.exercisesUpserted,
-      createdAt: l.createdAt,
-    })),
-  };
-}
-
-export async function deleteHealthSleepAction(uid: string) {
-  await ensureSchema();
-  await db.delete(healthSleeps).where(eq(healthSleeps.uid, uid));
-  revalidatePath("/saude");
-  revalidatePath("/hub");
-  return { ok: true };
-}
-
-export async function deleteHealthExerciseAction(uid: string) {
-  await ensureSchema();
-  await db.delete(healthExercises).where(eq(healthExercises.uid, uid));
-  revalidatePath("/saude");
-  revalidatePath("/hub");
+  revalidateFinancePaths();
   return { ok: true };
 }
 

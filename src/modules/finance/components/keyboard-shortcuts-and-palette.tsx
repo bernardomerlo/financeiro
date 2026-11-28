@@ -186,7 +186,7 @@ export function KeyboardShortcutsAndPalette() {
         icon: Table2,
         action: () => {
           closeAllModals();
-          router.push("/");
+          router.push("/financeiro");
         },
       },
       {
@@ -196,7 +196,7 @@ export function KeyboardShortcutsAndPalette() {
         icon: BarChart3,
         action: () => {
           closeAllModals();
-          router.push("/insights");
+          router.push("/financeiro/insights");
         },
       },
       {

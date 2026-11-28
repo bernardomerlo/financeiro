@@ -14,6 +14,7 @@ import {
   HeartPulse,
   LayoutGrid,
   Wallet,
+  BookOpenCheck,
 } from "lucide-react";
 import { useCashflowStore } from "@/store/use-cashflow-store";
 import {
@@ -41,8 +42,12 @@ export function TopNavbar({
 }: TopNavbarProps) {
   const pathname = usePathname();
   const isHealthModule = pathname.startsWith("/saude");
-  const isHubHome = pathname.startsWith("/hub");
-  const isFinanceModule = !isHealthModule && !isHubHome;
+  const isBujoModule = pathname.startsWith("/bujo");
+  const isFinanceModule =
+    pathname.startsWith("/financeiro") ||
+    pathname.startsWith("/insights") ||
+    pathname.startsWith("/notificacoes");
+  const isHubHome = pathname === "/" || pathname.startsWith("/hub");
 
   const {
     settings,
@@ -103,24 +108,35 @@ export function TopNavbar({
   return (
     <>
       {/* MOBILE HEADER: Hub Module Switcher + Quick Actions */}
-      <header className="flex lg:hidden h-12 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30 sticky top-0">
-        <div className="flex items-center gap-1.5 min-w-0">
+      <header className="flex lg:hidden h-12 bg-white border-b border-[#d8e0da] px-2.5 items-center justify-between gap-1.5 select-none shrink-0 z-30 sticky top-0">
+        <div className="flex items-center gap-1 min-w-0 overflow-x-auto thin-scroll">
           <Link
-            href="/hub"
-            className={`h-8 px-2 rounded-lg border flex items-center gap-1.5 shrink-0 text-xs font-bold transition-colors ${
+            href="/"
+            className={`h-8 px-2 rounded-lg border flex items-center gap-1 shrink-0 text-xs font-bold transition-colors ${
               isHubHome
                 ? "bg-[#2d6a3e] border-[#2d6a3e] text-white"
                 : "bg-[#eff3f0] border-[#d5ded8] text-[#141f17]"
             }`}
-            title="Central Hub"
+            title="Hub Central"
           >
             <LayoutGrid className="w-3.5 h-3.5" />
             <span>Hub</span>
           </Link>
 
-          <div className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
+          <div className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8] shrink-0">
             <Link
-              href="/"
+              href="/bujo"
+              className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 ${
+                isBujoModule
+                  ? "bg-white text-[#141f17] shadow-2xs"
+                  : "text-[#4e6153]"
+              }`}
+            >
+              <BookOpenCheck className="w-3 h-3 text-[#2d6a3e]" />
+              <span>BuJo</span>
+            </Link>
+            <Link
+              href="/financeiro"
               className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 ${
                 isFinanceModule
                   ? "bg-white text-[#141f17] shadow-2xs"
@@ -144,11 +160,11 @@ export function TopNavbar({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <Link
-            href="/notificacoes"
+            href="/financeiro/notificacoes"
             className={`w-8 h-8 rounded-lg border flex items-center justify-center relative ${
-              pathname === "/notificacoes"
+              pathname.includes("notificacoes")
                 ? "border-[#2d6a3e] bg-[#e8f5e9] text-[#1b5e20]"
                 : "border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153]"
             }`}
@@ -166,7 +182,11 @@ export function TopNavbar({
           {isFinanceModule && (
             <>
               <Link
-                href={pathname === "/insights" ? "/" : "/insights"}
+                href={
+                  pathname.includes("insights")
+                    ? "/financeiro"
+                    : "/financeiro/insights"
+                }
                 className="w-8 h-8 rounded-lg border border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center"
                 aria-label="Dashboards"
                 title="Dashboards"
@@ -188,14 +208,13 @@ export function TopNavbar({
         </div>
       </header>
 
-      {/* DESKTOP HEADER: Hub Switcher + Feature Sub-Navigation */}
+      {/* DESKTOP HEADER: Global Hub Switcher + Module Sub-Navigation */}
       <header className="hidden lg:flex h-11 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30">
         {/* Left: Global Hub Module Switcher + Feature Sub-navigation */}
         <div className="flex items-center gap-2">
-          {/* Global Module Switcher */}
           <div className="flex items-center bg-[#141f17] text-white p-0.5 rounded-lg">
             <Link
-              href="/hub"
+              href="/"
               className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors ${
                 isHubHome
                   ? "bg-[#2d6a3e] text-white"
@@ -208,7 +227,20 @@ export function TopNavbar({
             </Link>
 
             <Link
-              href="/"
+              href="/bujo"
+              className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                isBujoModule
+                  ? "bg-[#2d6a3e] text-white"
+                  : "text-[#c5d1c8] hover:text-white"
+              }`}
+              title="Bullet Journal"
+            >
+              <BookOpenCheck className="w-3.5 h-3.5" />
+              <span>BuJo</span>
+            </Link>
+
+            <Link
+              href="/financeiro"
               className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors ${
                 isFinanceModule
                   ? "bg-[#2d6a3e] text-white"
@@ -230,7 +262,7 @@ export function TopNavbar({
               title="Módulo Samsung Health"
             >
               <HeartPulse className="w-3.5 h-3.5" />
-              <span>Samsung Health</span>
+              <span>Saúde</span>
             </Link>
           </div>
 
@@ -239,11 +271,24 @@ export function TopNavbar({
             <>
               <nav className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
                 {[
-                  { href: "/", label: "Fluxo", icon: Table2 },
-                  { href: "/insights", label: "Dashboards", icon: BarChart3 },
-                  { href: "/notificacoes", label: "Notificações", icon: Bell },
+                  { href: "/financeiro", label: "Fluxo", icon: Table2 },
+                  {
+                    href: "/financeiro/insights",
+                    label: "Dashboards",
+                    icon: BarChart3,
+                  },
+                  {
+                    href: "/financeiro/notificacoes",
+                    label: "Notificações",
+                    icon: Bell,
+                  },
                 ].map((tab) => {
-                  const isActive = pathname === tab.href;
+                  const isActive =
+                    pathname === tab.href ||
+                    (tab.href === "/financeiro/insights" &&
+                      pathname === "/insights") ||
+                    (tab.href === "/financeiro/notificacoes" &&
+                      pathname === "/notificacoes");
                   const Icon = tab.icon;
                   return (
                     <Link
@@ -257,11 +302,12 @@ export function TopNavbar({
                     >
                       <Icon className="w-3.5 h-3.5 text-[#2d6a3e]" />
                       <span>{tab.label}</span>
-                      {tab.href === "/notificacoes" && pendingNotifCount > 0 && (
-                        <span className="px-1.5 py-0.2 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold tabular-nums">
-                          {pendingNotifCount}
-                        </span>
-                      )}
+                      {tab.href === "/financeiro/notificacoes" &&
+                        pendingNotifCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold tabular-nums">
+                            {pendingNotifCount}
+                          </span>
+                        )}
                     </Link>
                   );
                 })}
@@ -362,7 +408,7 @@ export function TopNavbar({
             </>
           ) : (
             <Link
-              href="/notificacoes"
+              href="/financeiro/notificacoes"
               className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1.5 text-xs font-semibold"
             >
               <Bell className="w-3.5 h-3.5 text-[#2d6a3e]" />

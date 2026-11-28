@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyExerciseCategory,
   formatDurationHoursMinutes,
   formatExerciseTypeLabel,
   normalizeHealthSyncBatch,
@@ -57,7 +58,7 @@ describe("health-sync parser & contract compatibility (automacao_samsung_health)
     });
   });
 
-  it("handles nullable sleepScore, caloriesKcal, and distanceMeters from Kotlin payload", () => {
+  it("handles nullable sleepScore, caloriesKcal, and distanceMeters and classifies gym/cardio", () => {
     const batch = normalizeHealthSyncBatch({
       device: "android-samsung-health",
       syncedAt: "2026-11-28T10:00:00Z",
@@ -88,5 +89,7 @@ describe("health-sync parser & contract compatibility (automacao_samsung_health)
     expect(batch.exercises[0].distanceMeters).toBeNull();
     expect(formatExerciseTypeLabel("WEIGHT_MACHINE")).toBe("Musculação");
     expect(formatDurationHoursMinutes(465)).toBe("7h 45m");
+    expect(classifyExerciseCategory("WEIGHT_MACHINE")).toBe("gym");
+    expect(classifyExerciseCategory("CYCLING")).toBe("cardio");
   });
 });
