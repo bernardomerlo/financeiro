@@ -80,6 +80,43 @@ export async function ensureSchema() {
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_mobile_notifications_fingerprint ON mobile_notifications(fingerprint)`,
       `CREATE INDEX IF NOT EXISTS idx_mobile_notifications_status ON mobile_notifications(status)`,
       `CREATE INDEX IF NOT EXISTS idx_mobile_notifications_event_date ON mobile_notifications(event_date)`,
+      `CREATE TABLE IF NOT EXISTS health_sleeps (
+        uid TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        duration_minutes INTEGER NOT NULL,
+        sleep_score INTEGER,
+        device TEXT NOT NULL DEFAULT 'android-samsung-health',
+        synced_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_health_sleeps_date ON health_sleeps(date)`,
+      `CREATE TABLE IF NOT EXISTS health_exercises (
+        uid TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        exercise_type TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        duration_minutes INTEGER NOT NULL,
+        calories_kcal REAL,
+        distance_meters REAL,
+        device TEXT NOT NULL DEFAULT 'android-samsung-health',
+        synced_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_health_exercises_date ON health_exercises(date)`,
+      `CREATE TABLE IF NOT EXISTS health_sync_logs (
+        id TEXT PRIMARY KEY,
+        device TEXT NOT NULL DEFAULT 'android-samsung-health',
+        synced_at TEXT NOT NULL,
+        sleeps_received INTEGER NOT NULL DEFAULT 0,
+        sleeps_upserted INTEGER NOT NULL DEFAULT 0,
+        exercises_received INTEGER NOT NULL DEFAULT 0,
+        exercises_upserted INTEGER NOT NULL DEFAULT 0,
+        raw_payload TEXT,
+        created_at TEXT NOT NULL
+      )`,
     ],
     "write"
   );

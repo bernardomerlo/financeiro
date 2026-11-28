@@ -10,12 +10,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "CashFlow",
-  description: "Fluxo de Caixa",
+  title: "Personal Hub • Finanças & Saúde",
+  description: "Hub Pessoal — Fluxo de Caixa & Samsung Health",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "CashFlow",
+    title: "Personal Hub",
   },
 };
 

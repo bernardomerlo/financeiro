@@ -44,3 +44,12 @@
   - Ao arrastar qualquer um dos 3 campos (`Entrada`, `Saída` ou `Diário`) de uma data de origem (`sourceDate`) e soltar em outra data (`targetDate`) e/ou em outra coluna (`Entrada`, `Saída` ou `Diário`):
     - As transações daquele campo na data de origem são movidas para a data de destino e convertidas para o tipo da coluna de destino (`Diário` ↔ `Saída` ↔ `Entrada`), zerando o campo na origem (inclusive mantendo `R$ 0,00` caso a origem seja um dia futuro de `Diário`) e **incrementando (somando)** ao valor já existente na coluna de destino.
     - Também é permitido arrastar entre colunas do **mesmo dia** (ex.: converter o `Diário` de um dia diretamente em `Saída` ou `Entrada`, e vice-versa).
+
+---
+
+## 5. Arquitetura Personal Hub & Módulo Samsung Health
+- **RN-13 (Personal Hub Multi-Módulos):**
+  - O sistema funciona como um **Personal Hub** com seletor global de módulos no topo (`Hub` • `Financeiro` • `Samsung Health`).
+  - O módulo **Financeiro** mantém todas as regras `RN-01` a `RN-12` intactas.
+  - O módulo **Samsung Health** (`/saude`) recebe dados do app Android em Kotlin (`bernardomerlo/automacao_samsung_health`) via `POST /api/health/sync` (ou `POST /api/health`).
+  - O contrato JSON (`SyncBatchPayload`) recebe `device`, `syncedAt`, `sleeps` (`uid`, `startTime`, `endTime`, `durationMinutes`, `sleepScore`) e `exercises` (`uid`, `exerciseType`, `startTime`, `endTime`, `durationMinutes`, `caloriesKcal`, `distanceMeters`), fazendo **upsert idempotente por `uid`** (`ON CONFLICT(uid) DO UPDATE`) e preservando `sleepScore` consolidado posteriormente pelo Samsung Health.

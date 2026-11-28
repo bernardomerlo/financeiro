@@ -17,6 +17,9 @@ import {
   recurringRules,
   recurringOccurrences,
   mobileNotifications,
+  healthSleeps,
+  healthExercises,
+  healthSyncLogs,
 } from "@/db/schema";
 import {
   calculateCreditCardInstallmentDates,
@@ -1122,3 +1125,122 @@ export async function revertApprovedNotificationAction(id: string) {
   revalidatePath("/notificacoes");
   return { ok: true };
 }
+
+export interface HealthSleepRecord {
+  uid: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  sleepScore: number | null;
+  device: string;
+  syncedAt: string;
+  createdAt: string;
+}
+
+export interface HealthExerciseRecord {
+  uid: string;
+  date: string;
+  exerciseType: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  caloriesKcal: number | null;
+  distanceMeters: number | null;
+  device: string;
+  syncedAt: string;
+  createdAt: string;
+}
+
+export interface HealthSyncLogRecord {
+  id: string;
+  device: string;
+  syncedAt: string;
+  sleepsReceived: number;
+  sleepsUpserted: number;
+  exercisesReceived: number;
+  exercisesUpserted: number;
+  createdAt: string;
+}
+
+export interface HealthDashboardData {
+  sleeps: HealthSleepRecord[];
+  exercises: HealthExerciseRecord[];
+  syncLogs: HealthSyncLogRecord[];
+}
+
+export async function fetchHealthDashboardDataAction(): Promise<HealthDashboardData> {
+  await ensureSchema();
+
+  const [rawSleeps, rawExercises, rawLogs] = await Promise.all([
+    db
+      .select()
+      .from(healthSleeps)
+      .orderBy(desc(healthSleeps.endTime))
+      .limit(120),
+    db
+      .select()
+      .from(healthExercises)
+      .orderBy(desc(healthExercises.startTime))
+      .limit(120),
+    db
+      .select()
+      .from(healthSyncLogs)
+      .orderBy(desc(healthSyncLogs.createdAt))
+      .limit(25),
+  ]);
+
+  return {
+    sleeps: rawSleeps.map((s) => ({
+      uid: s.uid,
+      date: s.date,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      durationMinutes: s.durationMinutes,
+      sleepScore: s.sleepScore,
+      device: s.device,
+      syncedAt: s.syncedAt,
+      createdAt: s.createdAt,
+    })),
+    exercises: rawExercises.map((e) => ({
+      uid: e.uid,
+      date: e.date,
+      exerciseType: e.exerciseType,
+      startTime: e.startTime,
+      endTime: e.endTime,
+      durationMinutes: e.durationMinutes,
+      caloriesKcal: e.caloriesKcal,
+      distanceMeters: e.distanceMeters,
+      device: e.device,
+      syncedAt: e.syncedAt,
+      createdAt: e.createdAt,
+    })),
+    syncLogs: rawLogs.map((l) => ({
+      id: l.id,
+      device: l.device,
+      syncedAt: l.syncedAt,
+      sleepsReceived: l.sleepsReceived,
+      sleepsUpserted: l.sleepsUpserted,
+      exercisesReceived: l.exercisesReceived,
+      exercisesUpserted: l.exercisesUpserted,
+      createdAt: l.createdAt,
+    })),
+  };
+}
+
+export async function deleteHealthSleepAction(uid: string) {
+  await ensureSchema();
+  await db.delete(healthSleeps).where(eq(healthSleeps.uid, uid));
+  revalidatePath("/saude");
+  revalidatePath("/hub");
+  return { ok: true };
+}
+
+export async function deleteHealthExerciseAction(uid: string) {
+  await ensureSchema();
+  await db.delete(healthExercises).where(eq(healthExercises.uid, uid));
+  revalidatePath("/saude");
+  revalidatePath("/hub");
+  return { ok: true };
+}
+

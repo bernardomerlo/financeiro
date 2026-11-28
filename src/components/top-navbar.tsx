@@ -11,6 +11,9 @@ import {
   CalendarClock,
   SlidersHorizontal,
   Bell,
+  HeartPulse,
+  LayoutGrid,
+  Wallet,
 } from "lucide-react";
 import { useCashflowStore } from "@/store/use-cashflow-store";
 import {
@@ -37,6 +40,9 @@ export function TopNavbar({
   simulationImpact = 0,
 }: TopNavbarProps) {
   const pathname = usePathname();
+  const isHealthModule = pathname.startsWith("/saude");
+  const isHubHome = pathname.startsWith("/hub");
+  const isFinanceModule = !isHealthModule && !isHubHome;
 
   const {
     settings,
@@ -96,26 +102,52 @@ export function TopNavbar({
 
   return (
     <>
-      {/* MOBILE HEADER: Minimalist */}
+      {/* MOBILE HEADER: Hub Module Switcher + Quick Actions */}
       <header className="flex lg:hidden h-12 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30 sticky top-0">
-        <Link href="/" className="flex items-center gap-2 min-w-0">
-          <span className="w-7 h-7 rounded-lg bg-[#2d6a3e] text-white flex items-center justify-center shrink-0">
-            <Table2 className="w-3.5 h-3.5" />
-          </span>
-          <div className="min-w-0 leading-tight">
-            <div className="text-sm font-bold text-[#141f17] truncate">
-              CashFlow
-            </div>
-            <div className="text-[11px] font-medium text-[#526657]">
-              Hoje • {formatShortDate(settings.referenceToday)}
-            </div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Link
+            href="/hub"
+            className={`h-8 px-2 rounded-lg border flex items-center gap-1.5 shrink-0 text-xs font-bold transition-colors ${
+              isHubHome
+                ? "bg-[#2d6a3e] border-[#2d6a3e] text-white"
+                : "bg-[#eff3f0] border-[#d5ded8] text-[#141f17]"
+            }`}
+            title="Central Hub"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Hub</span>
+          </Link>
+
+          <div className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
+            <Link
+              href="/"
+              className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 ${
+                isFinanceModule
+                  ? "bg-white text-[#141f17] shadow-2xs"
+                  : "text-[#4e6153]"
+              }`}
+            >
+              <Wallet className="w-3 h-3 text-[#2d6a3e]" />
+              <span>Finanças</span>
+            </Link>
+            <Link
+              href="/saude"
+              className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 ${
+                isHealthModule
+                  ? "bg-white text-[#141f17] shadow-2xs"
+                  : "text-[#4e6153]"
+              }`}
+            >
+              <HeartPulse className="w-3 h-3 text-[#2d6a3e]" />
+              <span>Saúde</span>
+            </Link>
           </div>
-        </Link>
+        </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
           <Link
             href="/notificacoes"
-            className={`w-9 h-9 rounded-lg border flex items-center justify-center relative ${
+            className={`w-8 h-8 rounded-lg border flex items-center justify-center relative ${
               pathname === "/notificacoes"
                 ? "border-[#2d6a3e] bg-[#e8f5e9] text-[#1b5e20]"
                 : "border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153]"
@@ -123,7 +155,7 @@ export function TopNavbar({
             aria-label="Notificações"
             title="Notificações"
           >
-            <Bell className="w-4 h-4 text-[#2d6a3e]" />
+            <Bell className="w-3.5 h-3.5 text-[#2d6a3e]" />
             {pendingNotifCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                 {pendingNotifCount}
@@ -131,86 +163,137 @@ export function TopNavbar({
             )}
           </Link>
 
-          <Link
-            href={pathname === "/insights" ? "/" : "/insights"}
-            className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center"
-            aria-label="Metas"
-            title="Metas"
-          >
-            <BarChart3 className="w-4 h-4 text-[#2d6a3e]" />
-          </Link>
+          {isFinanceModule && (
+            <>
+              <Link
+                href={pathname === "/insights" ? "/" : "/insights"}
+                className="w-8 h-8 rounded-lg border border-[#d5ded8] bg-[#f8faf8] active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center"
+                aria-label="Dashboards"
+                title="Dashboards"
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-[#2d6a3e]" />
+              </Link>
 
-          <button
-            type="button"
-            onClick={() => setSettingsModalOpen(true)}
-            className="w-9 h-9 rounded-lg border border-[#d5ded8] bg-white active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center cursor-pointer"
-            aria-label="Configurações"
-            title="Configurações"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-          </button>
+              <button
+                type="button"
+                onClick={() => setSettingsModalOpen(true)}
+                className="w-8 h-8 rounded-lg border border-[#d5ded8] bg-white active:bg-[#eff3f0] text-[#4e6153] flex items-center justify-center cursor-pointer"
+                aria-label="Configurações"
+                title="Configurações"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
         </div>
       </header>
 
-      {/* DESKTOP HEADER: Clean & direct without extra clutter */}
+      {/* DESKTOP HEADER: Hub Switcher + Feature Sub-Navigation */}
       <header className="hidden lg:flex h-11 bg-white border-b border-[#d8e0da] px-3 items-center justify-between gap-2 select-none shrink-0 z-30">
-        {/* Left: Main Navigation + Quarter Selector */}
+        {/* Left: Global Hub Module Switcher + Feature Sub-navigation */}
         <div className="flex items-center gap-2">
-          <nav className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
-            {[
-              { href: "/", label: "Fluxo", icon: Table2 },
-              { href: "/insights", label: "Dashboards", icon: BarChart3 },
-              { href: "/notificacoes", label: "Notificações", icon: Bell },
-            ].map((tab) => {
-              const isActive = pathname === tab.href;
-              const Icon = tab.icon;
-              return (
-                <Link
-                  key={tab.href}
-                  href={tab.href}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                    isActive
-                      ? "bg-white text-[#141f17] shadow-2xs border border-[#d5ded8]/80"
-                      : "text-[#4e6153] hover:text-[#141f17]"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 text-[#2d6a3e]" />
-                  <span>{tab.label}</span>
-                  {tab.href === "/notificacoes" && pendingNotifCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold tabular-nums">
-                      {pendingNotifCount}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
+          {/* Global Module Switcher */}
+          <div className="flex items-center bg-[#141f17] text-white p-0.5 rounded-lg">
+            <Link
+              href="/hub"
+              className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                isHubHome
+                  ? "bg-[#2d6a3e] text-white"
+                  : "text-[#c5d1c8] hover:text-white"
+              }`}
+              title="Visão Geral do Hub"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Hub</span>
+            </Link>
 
-          <div className="flex items-center bg-[#eff3f0] border border-[#d5ded8] rounded-lg p-0.5">
-            <button
-              type="button"
-              onClick={() => navigateMonths(-1)}
-              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white text-[#4e6153] hover:text-[#141f17] transition-colors cursor-pointer"
-              aria-label="Mês anterior"
+            <Link
+              href="/"
+              className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                isFinanceModule
+                  ? "bg-[#2d6a3e] text-white"
+                  : "text-[#c5d1c8] hover:text-white"
+              }`}
+              title="Módulo Financeiro"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={resetToCurrentQuarter}
-              className="px-2.5 h-6 text-xs font-semibold text-[#141f17] hover:text-[#2d6a3e] transition-colors cursor-pointer"
+              <Wallet className="w-3.5 h-3.5" />
+              <span>Financeiro</span>
+            </Link>
+
+            <Link
+              href="/saude"
+              className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                isHealthModule
+                  ? "bg-[#2d6a3e] text-white"
+                  : "text-[#c5d1c8] hover:text-white"
+              }`}
+              title="Módulo Samsung Health"
             >
-              {quarterLabel}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateMonths(1)}
-              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white text-[#4e6153] hover:text-[#141f17] transition-colors cursor-pointer"
-              aria-label="Próximo mês"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+              <HeartPulse className="w-3.5 h-3.5" />
+              <span>Samsung Health</span>
+            </Link>
           </div>
+
+          {/* Financeiro Sub-navigation */}
+          {isFinanceModule && (
+            <>
+              <nav className="flex items-center bg-[#eff3f0] p-0.5 rounded-lg border border-[#d5ded8]">
+                {[
+                  { href: "/", label: "Fluxo", icon: Table2 },
+                  { href: "/insights", label: "Dashboards", icon: BarChart3 },
+                  { href: "/notificacoes", label: "Notificações", icon: Bell },
+                ].map((tab) => {
+                  const isActive = pathname === tab.href;
+                  const Icon = tab.icon;
+                  return (
+                    <Link
+                      key={tab.href}
+                      href={tab.href}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                        isActive
+                          ? "bg-white text-[#141f17] shadow-2xs border border-[#d5ded8]/80"
+                          : "text-[#4e6153] hover:text-[#141f17]"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 text-[#2d6a3e]" />
+                      <span>{tab.label}</span>
+                      {tab.href === "/notificacoes" && pendingNotifCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold tabular-nums">
+                          {pendingNotifCount}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              <div className="flex items-center bg-[#eff3f0] border border-[#d5ded8] rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => navigateMonths(-1)}
+                  className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white text-[#4e6153] hover:text-[#141f17] transition-colors cursor-pointer"
+                  aria-label="Mês anterior"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetToCurrentQuarter}
+                  className="px-2.5 h-6 text-xs font-semibold text-[#141f17] hover:text-[#2d6a3e] transition-colors cursor-pointer"
+                >
+                  {quarterLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateMonths(1)}
+                  className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white text-[#4e6153] hover:text-[#141f17] transition-colors cursor-pointer"
+                  aria-label="Próximo mês"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Center: Live Balances */}
@@ -245,7 +328,7 @@ export function TopNavbar({
             )}
           </div>
 
-          {projectedQuarterEnd !== undefined && (
+          {projectedQuarterEnd !== undefined && isFinanceModule && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eff3f0] border border-[#d5ded8]">
               <span className="text-[#526657] font-medium">Fim Trimestre:</span>
               <span className="font-bold text-[#141f17]">
@@ -255,25 +338,42 @@ export function TopNavbar({
           )}
         </div>
 
-        {/* Right: Only Essential Actions (Fixos, Config) - RN-01/RN-02 */}
+        {/* Right: Actions */}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setRecurringModalOpen(true)}
-            className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1 text-xs font-medium cursor-pointer"
-          >
-            <CalendarClock className="w-3.5 h-3.5 text-[#2d6a3e]" />
-            <span>Fixos</span>
-          </button>
+          {isFinanceModule ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setRecurringModalOpen(true)}
+                className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1 text-xs font-medium cursor-pointer"
+              >
+                <CalendarClock className="w-3.5 h-3.5 text-[#2d6a3e]" />
+                <span>Fixos</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setSettingsModalOpen(true)}
-            className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1 text-xs font-medium cursor-pointer"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-[#4e6153]" />
-            <span>Config</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setSettingsModalOpen(true)}
+                className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1 text-xs font-medium cursor-pointer"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-[#4e6153]" />
+                <span>Config</span>
+              </button>
+            </>
+          ) : (
+            <Link
+              href="/notificacoes"
+              className="h-7 px-2.5 rounded-lg border border-[#d5ded8] bg-white hover:bg-[#eff3f0] text-[#141f17] flex items-center gap-1.5 text-xs font-semibold"
+            >
+              <Bell className="w-3.5 h-3.5 text-[#2d6a3e]" />
+              <span>Notificações</span>
+              {pendingNotifCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-[#1b5e20] text-white text-[10px] font-bold tabular-nums">
+                  {pendingNotifCount}
+                </span>
+              )}
+            </Link>
+          )}
         </div>
       </header>
     </>
